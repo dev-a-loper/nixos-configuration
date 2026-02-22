@@ -147,6 +147,19 @@ in
     # bindrt = SUPER, Super_L, exec, pkill -SIGUSR2 .waybar-wrapped
 
 
+    # bindt = , Super_L, global, caelestia:sidebar
+    # bindrt = SUPER, Super_L, global, caelestia:sidebar
+    bindin = Super, mouse:272, global, caelestia:launcherInterrupt
+    bindin = Super, mouse:273, global, caelestia:launcherInterrupt
+    bindin = Super, mouse:274, global, caelestia:launcherInterrupt
+    bindin = Super, mouse:275, global, caelestia:launcherInterrupt
+    bindin = Super, mouse:276, global, caelestia:launcherInterrupt
+    bindin = Super, mouse:277, global, caelestia:launcherInterrupt
+    bindin = Super, mouse_up, global, caelestia:launcherInterrupt
+    bindin = Super, mouse_down, global, caelestia:launcherInterrupt
+
+
+
     layerrule = noanim, waybar
     layerrule = blur, waybar
     layerrule = ignorezero, waybar
@@ -162,8 +175,7 @@ in
     bind = SUPER SHIFT, Q, killactive,
 
     # Application launcher
-    bind = SUPER, D, exec, rofi -show combi
-    bind = SUPER, N, exec, rofi -show
+    bind = SUPER, D, global, caelestia:launcher
 
     # Move focus with vim keys
     bind = SUPER, H, movefocus, l

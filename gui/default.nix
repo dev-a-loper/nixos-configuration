@@ -75,7 +75,7 @@ in
           settings = {
             # Declarative shell.json settings
 
-            bar."persistent" = false;
+            bar.persistent = false;
             services.useFahrenheit = false;
             general.apps.terminal = "alacritty";
             bar.status.showBattery = (
