@@ -38,6 +38,7 @@ in
 
     # Bluetooth
     exec-once = ${pkgs.blueman}/bin/blueman-applet
+    exec-once = caelestia-shell
 
     # Notifications
     exec-once = ${pkgs.dunst}/bin/dunst

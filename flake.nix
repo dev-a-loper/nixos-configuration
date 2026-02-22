@@ -22,7 +22,13 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     llm-agents.url = "github:numtide/llm-agents.nix";
+
+    caelestia-shell = {
+      url = "github:caelestia-dots/shell";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
+
   nixConfig = {
     extra-substituters = [
       "https://nix-community.cachix.org"
@@ -60,6 +66,7 @@
             };
             hardware-configuration = hw;
             llm-agents = inputs.llm-agents.packages.${system};
+            caelestia-shell = inputs.caelestia-shell;
           };
           # Module to inject secrets into config.userConfiguration.secrets
           secretsModule =

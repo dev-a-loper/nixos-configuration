@@ -2,6 +2,7 @@
   pkgs,
   config,
   unstable,
+  caelestia-shell,
   ...
 }:
 let
@@ -65,6 +66,21 @@ in
   services.libinput.touchpad.disableWhileTyping = true;
 
   home-manager.users.${userName} = {
+    imports = [
+    caelestia-shell.homeManagerModules.default
+      {
+        programs.caelestia = {
+          enable = true;
+          systemd.enable = true; # starts after your Wayland target
+          settings = {
+            # Declarative shell.json settings
+            bar.status.showBattery = false;
+            paths.wallpaperDir = "~/Images";
+          };
+          cli.enable = true; # adds caelestia-cli to PATH
+        };
+      }
+    ];
 
     services.flameshot.enable = true;
     services.flameshot.settings = {
@@ -113,8 +129,7 @@ in
       wofi = {
         enable = true;
       };
-      alacritty = {
-        enable = true;
+      alacritty = { enable = true;
       };
     };
 
@@ -141,6 +156,7 @@ in
     hyprlandPlugins.hyprgrass
     hyprlandPlugins.hyprbars
     hyprlandPlugins.hyprexpo
+
 
     hyprpaper
     # Common Wayland packages
