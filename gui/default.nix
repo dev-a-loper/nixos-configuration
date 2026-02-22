@@ -67,14 +67,20 @@ in
 
   home-manager.users.${userName} = {
     imports = [
-    caelestia-shell.homeManagerModules.default
+      caelestia-shell.homeManagerModules.default
       {
         programs.caelestia = {
           enable = true;
           systemd.enable = true; # starts after your Wayland target
           settings = {
             # Declarative shell.json settings
-            bar.status.showBattery = false;
+
+            bar."persistent" = false;
+            services.useFahrenheit = false;
+            general.apps.terminal = "alacritty";
+            bar.status.showBattery = (
+              config.networking.hostName == "nixos-laptop" || config.networking.hostName == "nixos-new-laptop"
+            );
             paths.wallpaperDir = "~/Images";
           };
           cli.enable = true; # adds caelestia-cli to PATH
@@ -129,7 +135,8 @@ in
       wofi = {
         enable = true;
       };
-      alacritty = { enable = true;
+      alacritty = {
+        enable = true;
       };
     };
 
@@ -156,7 +163,6 @@ in
     hyprlandPlugins.hyprgrass
     hyprlandPlugins.hyprbars
     hyprlandPlugins.hyprexpo
-
 
     hyprpaper
     # Common Wayland packages

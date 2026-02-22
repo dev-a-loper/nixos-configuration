@@ -41,13 +41,13 @@ in
     exec-once = caelestia-shell
 
     # Notifications
-    exec-once = ${pkgs.dunst}/bin/dunst
+    # exec-once = ${pkgs.dunst}/bin/dunst
 
     # Background
     exec-once = ${pkgs.hyprpaper}/bin/hyprpaper
 
     # Waybar with Hyprland-specific config
-    exec-once = ${pkgs.waybar}/bin/waybar  && pkill -SIGUSR1 .waybar-wrapped
+    # exec-once = ${pkgs.waybar}/bin/waybar  && pkill -SIGUSR1 .waybar-wrapped
 
 
     #####################
@@ -143,8 +143,8 @@ in
     bind = SUPER SHIFT, s,movetoworkspace, special
     bind = SUPER , s,togglespecialworkspace
     bind = SUPER , s,exec , ${ensure-class} sterm "alacritty --class sterm"
-    bindt = , Super_L, exec, pkill -SIGUSR1 .waybar-wrapped
-    bindrt = SUPER, Super_L, exec, pkill -SIGUSR2 .waybar-wrapped
+    # bindt = , Super_L, exec, pkill -SIGUSR1 .waybar-wrapped
+    # bindrt = SUPER, Super_L, exec, pkill -SIGUSR2 .waybar-wrapped
 
 
     layerrule = noanim, waybar
@@ -261,7 +261,7 @@ in
     bind = SUPER, Y, exec, ${notitrans-en}/bin/notitrans-en
     bind = SUPER, G, exec, ${search-select}/bin/search-select
     bind = SUPER, X, exec, ${notitrans-dict}/bin/notitrans-dict
-    bind = SUPER, C, exec, ${pkgs.dunst}/bin/dunstctl history-pop
+    # bind = SUPER, C, exec, ${pkgs.dunst}/bin/dunstctl history-pop
 
     # Scroll through existing workspaces with mod+scroll
     bind = SUPER, mouse_down, workspace, e+1
