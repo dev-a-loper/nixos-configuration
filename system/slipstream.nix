@@ -1,3 +1,4 @@
+
 {
   fetchFromGitHub,
   lib,
@@ -66,17 +67,17 @@ let
 in
 rustPlatform.buildRustPackage {
   pname = "slipstream-rust";
-  version = "2026-01-22";
+  version = "2026-02-22";
 
   src = fetchFromGitHub {
     owner = "Mygod";
     repo = "slipstream-rust";
-    rev = "bc772dd07d9a136dbd7553b0da575526de207847";
-    hash = "sha256-1d8eK+XyyorH9nqFj+r8uADqg73dEW6QOkQS/a9X4Tc=";
+    rev = "efd78e30fbcd00b042b169610072be9fb93ebafa";
+    hash = "sha256-MA1Y0f3ki6Ysb2XeWYTTDVsIZlEkDHnEz00+VI1Qmeo=";
     fetchSubmodules = true;
   };
 
-  cargoHash = "sha256-ySJDeGXTsuPJc740yDcSXvaHTEnFsojgNPf/P0YYKFI=";
+  cargoHash = "sha256-zvCOTaFRBNCdnoAk0CchBTz5kJOjlYC2yUBs40n0I2o=";
   cargoBuildFlags = [
     "-p slipstream-client"
     "-p slipstream-server"
@@ -98,4 +99,11 @@ rustPlatform.buildRustPackage {
   PICOQUIC_LIB_DIR = "${slipstream-picoquic}/lib";
 
   doCheck = false;
+  meta = with lib; {
+    description = "High-performance multi-path covert channel over DNS in Rust with vibe coding";
+    homepage = "https://github.com/Mygod/slipstream-rust";
+    license = licenses.asl20;
+    maintainers = with maintainers; [ nix-julia ];
+  };
 }
+
