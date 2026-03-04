@@ -54,6 +54,7 @@ in
   programs.proxychains = {
     enable = true;
     proxies = {
+      torproxy.enable = false;
       main = {
         type = "socks5";
         enable = true;
