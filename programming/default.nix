@@ -37,7 +37,7 @@ in
             ANTHROPIC_DEFAULT_HAIKU_MODEL = "glm-4.7";
             ANTHROPIC_DEFAULT_SONNET_MODEL = "glm-4.7";
             ANTHROPIC_DEFAULT_OPUS_MODEL = "glm-5";
-            https_proxy = "http://localhost:1080";
+            # https_proxy = "http://localhost:1080";
             ANTHROPIC_AUTH_TOKEN = secrets.ANTHROPIC_AUTH_TOKEN;
             ANTHROPIC_BASE_URL = "https://api.z.ai/api/anthropic";
           };
@@ -113,6 +113,7 @@ in
   nixpkgs.overlays = [ fenix.overlays.default ];
 
   environment.systemPackages = with pkgs; [
+    unstable.telegram-bot-api
     unstable.pnpm
     unstable.nodejs_24
     python310

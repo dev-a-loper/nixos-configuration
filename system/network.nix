@@ -40,7 +40,10 @@ in
   imports = [ ];
   networking.nameservers = [ "1.1.1.1" ];
   networking.networkmanager.enable = true;
-  # networking.firewall.checkReversePath = "loose";
+  networking.firewall.allowedTCPPorts = [
+    1080
+  ];
+  services.vnstat.enable = true;
   services.expressvpn.enable = true;
   services.openvpn.servers = {
     openvpn = {
