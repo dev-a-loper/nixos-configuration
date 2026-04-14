@@ -9,7 +9,7 @@
   };
   environment.systemPackages = with pkgs; [
     mkvtoolnix
-    ffmpeg
+    ffmpeg-full
     vlc
     popcorntime
   ];

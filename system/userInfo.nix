@@ -118,6 +118,10 @@ in
                   type = lib.types.str;
                   description = "OpenVPN client configuration file content.";
                 };
+                wgconfig = lib.mkOption {
+                  type = lib.types.anything;
+                  description = "wireguard config for wg0";
+                };
 
                 # Proxy configurations
                 proxies = lib.mkOption {

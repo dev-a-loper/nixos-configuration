@@ -9,6 +9,10 @@
   '';
 
   # Keyd for key remapping (replaces xmodmap)
+  environment.systemPackages = with pkgs; [
+    libva-utils
+    libva
+  ];
 
   services.tlp.enable = true;
   services.tlp.settings = {
@@ -18,5 +22,13 @@
     CPU_ENERGY_PERF_POLICY_ON_BAT = "power";
     CPU_ENERGY_PERF_POLICY_ON_AC = "performance";
 
+  };
+  hardware.graphics = {
+    enable = true;
+    extraPackages = with pkgs; [
+      intel-media-driver
+      vpl-gpu-rt
+      libva
+    ];
   };
 }

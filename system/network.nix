@@ -43,6 +43,8 @@ in
   networking.firewall.allowedTCPPorts = [
     1080
   ];
+  networking.nftables.enable = true;
+  networking.firewall.backend = "nftables";
   services.vnstat.enable = true;
   services.expressvpn.enable = true;
   services.openvpn.servers = {
@@ -83,6 +85,7 @@ in
     paqet
     pkgs.xray
     pkgs.v2ray
+    unstable.v2rayn
     unstable.tor-browser
     unstable.sing-box
     unstable.v2raya
@@ -94,9 +97,15 @@ in
     unstable.tor
     pkgs.expressvpn
     chproxy
+    unstable.wireguard-tools
   ];
   services.snowflake-proxy.enable = true;
   services.dbus.packages = [ unstable.amnezia-vpn ];
+  users.users.novpn = {
+    isSystemUser = true;
+    group = "novpn";
+  };
+  users.groups.novpn = { };
 
   systemd = {
     packages = [ unstable.amnezia-vpn ];
@@ -163,6 +172,8 @@ in
       after = [ "network.target" ];
       serviceConfig = {
         Restart = "always";
+        # User = "novpn"; # ← runs as novpn, triggers the uid routing rule
+        # Group = "novpn";
         ExecStart = pkgs.writeShellScript "proxy-start" ''
           if [ -f /etc/current-proxy ]; then
             name=$(cat /etc/current-proxy)

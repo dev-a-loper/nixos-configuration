@@ -22,6 +22,9 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     llm-agents.url = "github:numtide/llm-agents.nix";
+
+    HyprQuickFrame.url = "github:Ronin-CK/HyprQuickFrame";
+    HyprQuickFrame.inputs.nixpkgs.follows = "nixpkgs";
   };
   nixConfig = {
     extra-substituters = [
@@ -54,6 +57,7 @@
         secrets: hw:
         let
           specialArgs = inputs // {
+            HyprQuickFrame = inputs.HyprQuickFrame.packages.${system}.default;
             unstable = import inputs.unstable {
               inherit system;
               config.allowUnfree = true;

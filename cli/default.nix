@@ -109,6 +109,7 @@ in
       ariang
       zoxide
       yazi
+      certbot
       (pkgs.writeShellApplication {
         name = "ai";
         text = ''${alacritty}/bin/alacritty --title "aider" '';

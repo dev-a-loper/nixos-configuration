@@ -253,7 +253,7 @@ in
     bindel = , XF86AudioMicMute, exec, pactl set-source-mute @DEFAULT_SOURCE@ toggle
 
     # Screenshot
-    bind = , Print, exec, ${pkgs.flameshot}/bin/flameshot gui
+    bind = , Print, exec, hyprquickframe
 
     # Custom scripts
     bind = SUPER, T, exec, ${notitrans-fa}/bin/notitrans-fa

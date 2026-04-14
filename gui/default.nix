@@ -2,6 +2,7 @@
   pkgs,
   config,
   unstable,
+  HyprQuickFrame,
   ...
 }:
 let
@@ -165,6 +166,7 @@ in
     fcitx5.addons = with pkgs; [
       fcitx5-mozc
       fcitx5-gtk
+      HyprQuickFrame
     ];
   };
 }
