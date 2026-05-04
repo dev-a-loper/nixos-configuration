@@ -1,4 +1,4 @@
-{ config, ... }:
+{ pkgs, config, ... }:
 let
   userName = config.userConfiguration.name;
 in
@@ -18,6 +18,7 @@ in
       };
     };
   };
+  environment.systemPackages = [ pkgs.vagrant  ];
   users.users.${userName}.extraGroups = [ "libvirtd" ];
 
 }

@@ -150,6 +150,7 @@
         installRustc = false;
       };
       servers.html.enable = true;
+
       servers.tailwindcss.enable = true;
       servers.svelte.enable = true;
       servers.emmet_ls.enable = true;
@@ -268,6 +269,21 @@
       mode = "n";
     }
   ];
+  lsp.servers.vls.enable = true;
+  lsp.servers.vls.package = pkgs.callPackage ../vls.nix { };
+  lsp.servers.vls.config = {
+    cmd = [
+      "vls"
+    ];
+    filetypes = [
+      "v"
+      "vlang"
+    ];
+    root_markers = [
+      "v.mod"
+      ".git"
+    ];
+  };
   # plugins.typescript-tools.enable = true;
   extraConfigLua = ''
     local cmp=require('cmp')

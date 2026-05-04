@@ -26,6 +26,7 @@ in
 
     # Will be configured automatically or via hardware-configuration
     monitor = HDMI-A-1,preferred,auto,2.5
+    monitor = DP-5,preferred,auto,2.5
     monitor = eDP-1,preferred,auto,1.5
 
 
@@ -125,7 +126,7 @@ in
             natural_scroll = false
             tap-to-click = true
             disable_while_typing = true
-            tap_button_map = lmr
+            tap_button_map = lrm
             middle_button_emulation = true
         }
     }

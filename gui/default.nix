@@ -143,6 +143,8 @@ in
     hyprlandPlugins.hyprbars
     hyprlandPlugins.hyprexpo
 
+    wf-recorder
+
     hyprpaper
     # Common Wayland packages
     waybar
@@ -155,6 +157,7 @@ in
     xdg-desktop-portal-wlr
     wvkbd
     pavucontrol
+    gimp
 
   ];
   programs.thunar.enable = true;

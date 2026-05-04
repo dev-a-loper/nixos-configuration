@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, unstable, ... }:
 {
   imports = [ ];
   services.pipewire = {
@@ -12,6 +12,8 @@
     ffmpeg-full
     vlc
     popcorntime
+    unstable.yt-dlp
+    unstable.yt-dlg
   ];
   hardware.bluetooth.enable = true;
   services.blueman.enable = true;

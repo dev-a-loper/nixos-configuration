@@ -1,13 +1,11 @@
-{ pkgs, ... }:
+{ pkgs, config, ... }:
 {
   imports = [ ./base.nix ];
   networking.hostName = "nixos-new-laptop"; # Define your hostname.
-
   services.udev.extraHwdb = ''
     evdev:atkbd:dmi:bvn*:bvr*:bd*:svn*:pn*:pvr*
      KEYBOARD_KEY_56=leftshift
   '';
-
   # Keyd for key remapping (replaces xmodmap)
   environment.systemPackages = with pkgs; [
     libva-utils
@@ -31,4 +29,6 @@
       libva
     ];
   };
+  services.hardware.bolt.enable = true;
+  
 }

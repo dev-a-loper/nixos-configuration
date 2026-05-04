@@ -37,7 +37,7 @@ in
       extensions.packages = with pkgs.nur.repos.rycee.firefox-addons; [
         bitwarden
         tridactyl
-        foxyproxy-standard
+        zeroomega
       ];
       isDefault = true;
       search.default = "ddg";

@@ -110,6 +110,7 @@ in
       zoxide
       yazi
       certbot
+      lm_sensors
       (pkgs.writeShellApplication {
         name = "ai";
         text = ''${alacritty}/bin/alacritty --title "aider" '';
