@@ -155,6 +155,7 @@ in
       "rustfmt"
     ])
     pre-commit
+    android-tools
   ];
 
   services.postgresql.package = pkgs.postgresql_17;
