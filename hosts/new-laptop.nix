@@ -10,6 +10,14 @@
   environment.systemPackages = with pkgs; [
     libva-utils
     libva
+    s-tui
+    stress
+    perf # part of linux-tools / linuxPackages.cpupower
+    powertop
+    fwupd
+    lm_sensors
+
+
   ];
 
   services.tlp.enable = true;
@@ -30,5 +38,8 @@
     ];
   };
   services.hardware.bolt.enable = true;
-  
+  # services.udev.extraRules = ''
+  #   SUBSYSTEM=="power_supply", KERNEL=="ucsi-source-psy-USBC000:001", ATTR{current_max}="2250000"
+  # '';
+
 }

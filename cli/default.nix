@@ -67,8 +67,8 @@ in
       # editors
       vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
       openssl
-      llm-agents.claude-code-acp
-      (pkgs.writeShellScriptBin "claude-code-acp" "${llm-agents.claude-code-acp}/bin/claude-agent-acp")
+      llm-agents.claude-agent-acp
+      (pkgs.writeShellScriptBin "claude-code-acp" "${llm-agents.claude-agent-acp}/bin/claude-agent-acp")
       llm-agents.claude-plugins
       llm-agents.skills-installer
 
