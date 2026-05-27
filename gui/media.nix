@@ -16,19 +16,24 @@
     unstable.yt-dlg
   ];
   services.galene = {
+    httpAddress = "0.0.0.0";
     enable = true;
     insecure = true;
-    groupsDir = toString (pkgs.writeTextDir "groups/public.json" ''
-      {
-        "description": "Public",
-        "public": true,
-        "allow-anonymous": true,
-        "wildcard-user": {
-          "password": {"type": "wildcard"},
-          "permissions": "present"
-        }
-      }
-    '') + "/groups";
+    groupsDir =
+      toString (
+        pkgs.writeTextDir "groups/public.json" ''
+          {
+            "description": "Public",
+            "public": true,
+            "allow-anonymous": true,
+            "wildcard-user": {
+              "password": {"type": "wildcard"},
+              "permissions": "present"
+            }
+          }
+        ''
+      )
+      + "/groups";
   };
   hardware.bluetooth.enable = true;
   services.blueman.enable = true;

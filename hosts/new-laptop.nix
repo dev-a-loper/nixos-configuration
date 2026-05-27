@@ -16,7 +16,7 @@
     powertop
     fwupd
     lm_sensors
-
+    fwupd-efi
 
   ];
 
@@ -42,4 +42,10 @@
   #   SUBSYSTEM=="power_supply", KERNEL=="ucsi-source-psy-USBC000:001", ATTR{current_max}="2250000"
   # '';
 
+  # Enable fwupd service
+  services.fwupd.enable = true;
+
+  # For Thunderbolt dock detection
+
+  # Make sure fwupd command is available
 }

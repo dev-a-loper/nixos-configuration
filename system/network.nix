@@ -42,7 +42,15 @@ in
   networking.networkmanager.enable = true;
   networking.firewall.allowedTCPPorts = [
     1080
+    5900
+    8443
   ];
+  networking.firewall.allowedUDPPorts = [
+    5900
+    8443
+    8080
+  ];
+
   networking.nftables.enable = true;
   networking.firewall.backend = "nftables";
   services.vnstat.enable = true;

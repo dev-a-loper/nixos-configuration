@@ -158,6 +158,7 @@ in
     wvkbd
     pavucontrol
     gimp
+    moonlight-qt
 
   ];
   programs.thunar.enable = true;
@@ -171,5 +172,15 @@ in
       fcitx5-gtk
       HyprQuickFrame
     ];
+  };
+
+  services.sunshine = {
+    enable = true;
+    autoStart = true;
+    capSysAdmin = true;
+    openFirewall = true;
+    settings = {
+      capture = "wlr";
+    };
   };
 }
