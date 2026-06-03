@@ -106,7 +106,6 @@ in
       zellij
       timewarrior
       lynx
-      ariang
       zoxide
       yazi
       certbot

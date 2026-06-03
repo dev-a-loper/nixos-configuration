@@ -106,6 +106,8 @@ in
     pkgs.expressvpn
     chproxy
     unstable.wireguard-tools
+    pkgs.udp2raw
+    pkgs.innernet
   ];
   services.snowflake-proxy.enable = true;
   services.dbus.packages = [ unstable.amnezia-vpn ];
@@ -197,6 +199,7 @@ in
         unstable.sing-box
         unstable.v2raya
         paqet
+        pkgs.udp2raw
       ];
       wantedBy = [ "multi-user.target" ];
     };

@@ -5,7 +5,6 @@
 }:
 let
   hyprgrass = pkgs.hyprlandPlugins.hyprgrass;
-  hyprexpo = pkgs.hyprlandPlugins.hyprexpo;
   notitrans-fa = pkgs.callPackage ./notitrans-fa.nix { };
   notitrans-en = pkgs.callPackage ./notitrans-en.nix { };
   notitrans-dict = pkgs.callPackage ./notitrans-dict.nix { };
@@ -254,7 +253,7 @@ in
     bindel = , XF86AudioMicMute, exec, pactl set-source-mute @DEFAULT_SOURCE@ toggle
 
     # Screenshot
-    bind = , Print, exec, hyprquickframe
+    bind = , Print, exec, HQF_ACTION=temp hyprquickframe
 
     # Custom scripts
     bind = SUPER, T, exec, ${notitrans-fa}/bin/notitrans-fa
@@ -327,30 +326,12 @@ in
 
 
     exec-once = hyprctl plugin load ${hyprgrass}/lib/libhyprgrass.so 
-    exec-once = hyprctl plugin load ${hyprexpo}/lib/libhyprexpo.so 
 
     # windowrulev2=move 0 0,class:(flameshot),title:(flameshot)
     # windowrulev2=pin,class:(flameshot),title:(flameshot)
     # windowrulev2=fullscreenstate,class:(flameshot),title:(flameshot)
     # windowrulev2=float,class:(flameshot),title:(flameshot)
     plugin {
-        hyprexpo {
-            columns = 3
-            gap_size = 5
-            bg_col = rgb(111111)
-            workspace_method = center current # [center/first] [workspace] e.g. first 1 or center m+1
-
-            gesture_distance = 300 # how far is the "max" for the gesture
-
-            # Three-finger swipe up to open overview
-            hyprexpo-gesture = 3, up, expo
-
-            # Four-finger swipe down with Alt modifier
-            hyprexpo-gesture = 4, down, mod:ALT, expo
-
-            # Unset a gesture
-            hyprexpo-gesture = 3, up, unset
-        }
         
 
      touch_gestures {

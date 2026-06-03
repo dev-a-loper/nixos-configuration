@@ -85,6 +85,57 @@ in
         package = pkgs.materia-theme;
       };
     };
+    home.file.".config/hyprquickframe/theme.toml".text = ''
+      # Main highlight color on the active tab
+      accent = "#cba6f7"
+      # Text color on the active tab (should contrast with accent)
+      accentText = "#11111b"
+      # Dim overlay opacity when selecting (0.0 - 1.0)
+      dimOpacity = 0.6
+      # Corner radius on selection outline
+      borderRadius = 10
+      # Selection outline thickness
+      outlineThickness = 2
+      # Distance from bottom edge to the bar
+      bottomMargin = 60
+      # Global animation toggle (true/false)
+      animations = false
+      # Tool to use for the "edit" screenshot action (e.g., "satty" or "gradia")
+      annotationTool = "satty"
+
+      [bar]
+      # Segmented control background
+      background = "rgba(38, 38, 38, 0.4)"
+      # Segmented control border
+      border = "rgba(255, 255, 255, 0.15)"
+      # Inactive tab text color
+      text = "#AAFFFFFF"
+      # Drop shadow under the bar
+      shadow = "#80000000"
+
+      [toggle]
+      # Drop shadow under toggle pills
+      shadow = "#80000000"
+      # Edit toggle icon color
+      edit = "#1ABC9C"
+      # Temp toggle icon color
+      temp = "#2C66D8"
+
+      [share]
+      # Icon color when device is reachable
+      connected = "#3498DB"
+      # Icon color while checking connectivity
+      pending = "#95A5A6"
+      # Icon color on connection failure
+      errorIcon = "white"
+      # Background color on connection failure
+      errorBackground = "#E74C3C"
+
+      [hooks]
+      # Command to run after a screenshot is saved (leave empty to disable)
+      # Placeholders: %f = full path, %n = filename, %d = directory, %t = timestamp
+      postSaveHook = ""
+    '';
     home.file.".config/hypr/hyprland.conf".text =
       (import ./hyprland-config.nix {
         pkgs = pkgs;
@@ -141,9 +192,7 @@ in
     hyprland
     hyprlandPlugins.hyprgrass
     hyprlandPlugins.hyprbars
-    hyprlandPlugins.hyprexpo
 
-    wf-recorder
 
     hyprpaper
     # Common Wayland packages
