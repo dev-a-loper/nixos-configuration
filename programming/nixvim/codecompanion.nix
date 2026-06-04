@@ -32,7 +32,7 @@
     inline = {
       adapter = {
         name = "zai";
-        model = "glm-4.7";
+        model = "glm-5.1";
       };
     };
   };

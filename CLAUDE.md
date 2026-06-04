@@ -145,7 +145,7 @@ Hardware config goes in `vars/hardware-configuration.nix`.
 
 Located in `programming/default.nix`:
 - Custom API endpoint: `https://api.z.ai/api/anthropic`
-- Model: `glm-4.7`
+- Model: `glm-5.1`
 - MCP servers: `web-search-prime`, `zai-mcp-server`, `web-reader`, `zread`
 - Hooks: notify-send + Telegram notifications
 

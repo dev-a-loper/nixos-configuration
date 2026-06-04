@@ -35,7 +35,7 @@ in
         package = unstable.claude-code;
         settings = {
           env = {
-            ANTHROPIC_DEFAULT_HAIKU_MODEL = "glm-4.7";
+            ANTHROPIC_DEFAULT_HAIKU_MODEL = "glm-5.1";
             ANTHROPIC_DEFAULT_SONNET_MODEL = "glm-5.1";
             ANTHROPIC_DEFAULT_OPUS_MODEL = "glm-5.1";
             # https_proxy = "http://localhost:1080";
