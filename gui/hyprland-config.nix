@@ -93,7 +93,6 @@ in
     }
 
     dwindle {
-        pseudotile = false
         preserve_split = true
     }
 
@@ -146,10 +145,11 @@ in
     bindrt = SUPER, Super_L, exec, pkill -SIGUSR2 .waybar-wrapped
 
 
-    layerrule = noanim, waybar
-    layerrule = blur, waybar
-    layerrule = ignorezero, waybar
-    layerrule = animation slide, waybar
+
+    layerrule = match:namespace waybar, no_anim on
+    layerrule = match:namespace waybar, blur on
+    # layerrule = match:namespace waybar, ignore_alpha on
+    layerrule = match:namespace waybar, animation slide
 
     # Terminal
     bind = SUPER, Return, exec, alacritty --class sterm
@@ -189,15 +189,15 @@ in
     bind = SUPER SHIFT, Down, movewindow, d
 
     # Split orientation
-    bind = SUPER, O, togglesplit,
-    bind = SUPER, V, togglesplit,
+    bind = SUPER, O, layoutmsg, togglesplit
+    bind = SUPER, V, layoutmsg, togglesplit
+    bind = SUPER, E, layoutmsg, togglesplit
 
     # Fullscreen
     bind = SUPER, F, fullscreen,
 
     # Layouts
     bind = SUPER, W, togglegroup,
-    bind = SUPER, E, togglesplit,
 
     # Toggle floating
     bind = SUPER SHIFT, Z, togglefloating,
@@ -295,19 +295,20 @@ in
     ##############################
 
     # Workspace assignments
-    windowrulev2 = workspace special, class:^(sterm)$
-    windowrulev2 = workspace 1, class:^(glrnvim)$
-    windowrulev2 = workspace 2, class:^(firefox)$
-    windowrulev2 = workspace 3, class:^(Alacritty)$
-    windowrulev2 = workspace 4, class:^(aider)$
-    windowrulev2 = workspace 5, class:^(org.telegram.desktop)$
-    windowrulev2 = workspace 5, class:^(TelegramDesktop)$
+    
+    windowrule = workspace special, match:class sterm
+    windowrule = workspace 1, match:class glrnvim
+    windowrule = workspace 2, match:class firefox
+    windowrule = workspace 3, match:class Alacritty
+    windowrule = workspace 4, match:class aider
+    windowrule = workspace 5, match:class org.telegram.desktop
+    windowrule = workspace 5, match:class TelegramDesktop
 
     # Border size for all windows
     # windowrulev2 = bordersize 1, class:.*
 
     # Ignore maximize requests from apps
-    windowrule = suppressevent maximize, class:.*
+    windowrule = suppress_event maximize, match:class .*
 
     # Fix some dragging issues with XWayland
 
