@@ -4,6 +4,7 @@ let
 in
 {
   home-manager.users.${userName}.programs.firefox = {
+    configPath = ".mozilla/firefox";
     enable = true;
     package = pkgs.wrapFirefox pkgs.firefox-bin-unwrapped {
       extraPolicies = {

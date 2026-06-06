@@ -1,10 +1,10 @@
 {
   pkgs,
   config,
+  hyprgrass,
   ...
 }:
 let
-  hyprgrass = pkgs.hyprlandPlugins.hyprgrass;
   notitrans-fa = pkgs.callPackage ./notitrans-fa.nix { };
   notitrans-en = pkgs.callPackage ./notitrans-en.nix { };
   notitrans-dict = pkgs.callPackage ./notitrans-dict.nix { };
