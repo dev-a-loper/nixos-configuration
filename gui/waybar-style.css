@@ -35,8 +35,8 @@ window#waybar.hidden {
 #workspaces,
 #mode,
 #window {
-    padding: 4px;
-    margin: 2px 2px;
+    padding: 2px;
+    margin: 1px 1px;
     background: rgba(69, 71, 90, 0.3);
     border-radius: 12px;
     color: #CDD6F4;
@@ -63,7 +63,7 @@ window#waybar.hidden {
 /* Workspaces */
 #workspaces {
     margin: 2px 2px;
-    padding: 4px;
+    padding: 2px;
     background: rgba(69, 71, 90, 0.2);
     border-radius: 14px;
     border: 1px solid rgba(137, 180, 250, 0.1);
