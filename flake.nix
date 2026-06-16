@@ -50,11 +50,10 @@
         module = import ./programming/nixvim;
       };
       system = "x86_64-linux";
-      secrets-file = ./vars/secrets.ehsan.nix;
-      secrets = import secrets-file;
+      secretsFile = ./vars/secrets.ehsan.nix;
       hardware-configuration = ./vars/hardware-configuration.nix;
       system-definer = (
-        secrets: hw:
+        secretsModule: hw:
         let
           specialArgs = inputs // {
             HyprQuickFrame = inputs.HyprQuickFrame.packages.${system}.default;
@@ -65,12 +64,6 @@
             hardware-configuration = hw;
             llm-agents = inputs.llm-agents.packages.${system};
           };
-          # Module to inject secrets into config.userConfiguration.secrets
-          secretsModule =
-            { config, ... }:
-            {
-              config.userConfiguration.secrets = secrets;
-            };
         in
         {
           base = {
@@ -134,7 +127,7 @@
       packages."x86_64-linux".iso = inputs.self.nixosConfigurations.iso.config.system.build.isoImage;
       packages."x86_64-linux".usb = inputs.self.nixosConfigurations.usb.config.system.build.sdImage;
       nixosConfigurations = builtins.mapAttrs (name: value: (nixpkgs.lib.nixosSystem value)) (
-        system-definer secrets hardware-configuration
+        system-definer secretsFile hardware-configuration
       );
       inherit system-definer;
     };
