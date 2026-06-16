@@ -58,7 +58,7 @@ in
   };
 
   # Mask xdg-desktop-portal-gtk.service to prevent it from interfering with wlr portal
-  systemd.user.services.xdg-desktop-portal-gtk.enable = false;
+  # systemd.user.services.xdg-desktop-portal-gtk.enable = false;
 
   fonts.packages = with pkgs; [
     pkgs.nerd-fonts.jetbrains-mono

@@ -8,7 +8,13 @@ in
   virtualisation.docker.daemon.settings.ipv6 = false;
 
   virtualisation.docker.daemon.settings.data-root = "/var/lib/d22";
-  virtualisation.libvirtd.enable = true;
+  virtualisation.libvirtd = {
+    enable = true;
+    qemu = {
+      runAsRoot = true;
+      swtpm.enable = true;
+    };
+  };
   programs.virt-manager.enable = true;
   home-manager.users.${userName} = {
     dconf.settings = {
@@ -18,7 +24,7 @@ in
       };
     };
   };
-  environment.systemPackages = [ pkgs.vagrant  ];
+  environment.systemPackages = [ pkgs.vagrant ];
   users.users.${userName}.extraGroups = [ "libvirtd" ];
 
 }

@@ -98,7 +98,6 @@ in
     unstable.sing-box
     unstable.v2raya
     unstable.tun2socks
-    unstable.throne
     unstable.amnezia-vpn
     unstable.amneziawg-go
     unstable.amneziawg-tools

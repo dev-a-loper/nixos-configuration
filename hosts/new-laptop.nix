@@ -44,6 +44,7 @@
 
   # Enable fwupd service
   services.fwupd.enable = true;
+  boot.kernelModules = [ "kvm-intel" ]; # Use "kvm-amd" if you are using an AMD processor
 
   # For Thunderbolt dock detection
 
