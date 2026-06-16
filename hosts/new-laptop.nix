@@ -38,9 +38,6 @@
     ];
   };
   services.hardware.bolt.enable = true;
-  # services.udev.extraRules = ''
-  #   SUBSYSTEM=="power_supply", KERNEL=="ucsi-source-psy-USBC000:001", ATTR{current_max}="2250000"
-  # '';
 
   # Enable fwupd service
   services.fwupd.enable = true;

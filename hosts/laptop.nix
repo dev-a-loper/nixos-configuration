@@ -1,7 +1,4 @@
 { pkgs, ... }:
-let
-  dpi = 120;
-in
 {
   imports = [ ./base.nix ];
   networking.hostName = "nixos-laptop"; # Define your hostname.

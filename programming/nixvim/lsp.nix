@@ -233,12 +233,6 @@
       mode = "n";
     }
     {
-      key = "<leader>lr";
-      action.__raw = "function () vim.lsp.buf.rename() end";
-      options.desc = "Rename using lsp";
-      mode = "n";
-    }
-    {
       key = "<leader>ld";
       action.__raw = "function() vim.diagnostic.open_float() end";
       options.desc = "Hover diagnostics";

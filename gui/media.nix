@@ -1,6 +1,5 @@
 { pkgs, unstable, ... }:
 {
-  imports = [ ];
   services.pipewire = {
     enable = true;
     alsa.enable = true;

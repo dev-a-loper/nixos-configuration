@@ -14,9 +14,6 @@
   ];
 
   specialisation.hidpi.configuration = import ./hidpi.nix { inherit pkgs; };
-
-  # nix.optimise.automatic = true;
-  # nix.optimise.dates=["12:00"];
   nix.gc.options = lib.mkForce "--delete-older-than 7d";
   boot.loader.grub.useOSProber = lib.mkForce false;
   services.xserver.desktopManager.xfce.enable = lib.mkForce false;
@@ -32,8 +29,6 @@
     # "vm.dirty_background_ratio" = 5;
     "vm.vfs_cache_pressure" = 50;
   };
-  # boot.initrd.kernelModules = [ "uat" ];
-  # checkout the example folder for how to configure different disko layouts
 
 }
 // import ./usb-disko.nix

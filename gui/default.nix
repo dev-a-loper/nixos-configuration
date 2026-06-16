@@ -57,9 +57,6 @@ in
     # Tells GTK apps to use the portal instead of native dialogs
   };
 
-  # Mask xdg-desktop-portal-gtk.service to prevent it from interfering with wlr portal
-  # systemd.user.services.xdg-desktop-portal-gtk.enable = false;
-
   fonts.packages = with pkgs; [
     pkgs.nerd-fonts.jetbrains-mono
     pkgs.nerd-fonts.fira-code
@@ -197,7 +194,6 @@ in
     };
 
   };
-  # services.gammastep.enable = true;
   environment.systemPackages = with pkgs; [
     alacritty
     # Window manager and utils

@@ -6,8 +6,8 @@ This repository contains my personal NixOS configuration files. Before using thi
 
 ## Secret management
 
-- A `./vars/secrets.<username>.nix` file containing sensitive information like API keys. There are 4 required keys:
-  - `proxy` - A shell script that runs a proxy on port 1080
+- A `./vars/secrets.<username>.nix` file containing sensitive information like API keys. Key entries include (see `system/userInfo.nix` for the full schema):
+  - `proxies` / `defaultProxy` - Attrset of proxy shell scripts (each listens on port 1080) and the default proxy name
   - `OPENAI_API_KEY` - OpenAI's API key
   - `location` - an attributeset of Latitude and longitude of your current location (for praytimes and redshift)
 - A hardware configuration file at `./vars/hardware-configuration.nix` for your system (not needed for building the ISO file)

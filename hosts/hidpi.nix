@@ -5,7 +5,6 @@
   ...
 }:
 let
-  dpi = 250;
   userName = config.userConfiguration.name;
 in
 {

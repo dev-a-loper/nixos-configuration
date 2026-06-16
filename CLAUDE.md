@@ -52,27 +52,28 @@ flake.nix                      # Central orchestrator, defines all systems
 │   ├── nix.nix               # Flakes, GC settings
 │   ├── network.nix           # VPNs, proxies, ExpressVPN
 │   ├── slipstream.nix        # Custom DNS channel package
-│   ├── expressvpn.nix        # ExpressVPN service
 │   └── printing.nix          # Printing service
 │
-├── gui/                      # Sway/Wayland desktop
-│   ├── sway-config.nix       # Sway WM config, keybindings, assigns
-│   ├── i3status-rust.nix     # Status bar
+├── gui/                      # Hyprland/Wayland desktop
+│   ├── default.nix           # GUI aggregator (Hyprland, SDDM, fonts, packages, home-manager)
+│   ├── hyprland-config.nix   # Hyprland WM config, keybindings, window rules
+│   ├── waybar.nix            # Status bar
 │   ├── firefox.nix           # Firefox settings
 │   ├── media.nix             # Media applications
-│   └── Custom shell apps: notitrans-{fa,en,dict}, search-select, aiask, ensure-class
+│   └── Custom shell apps: notitrans-{fa,en,dict}, search-select, ensure-class-hyprland
 │
 ├── cli/                      # Command-line tools
 │   └── zsh, shells, utilities
 │
 ├── programming/              # Development environment
 │   ├── editors.nix           # Neovim via nixvim
+│   ├── claude-code.nix       # Claude Code config (AI assistant)
 │   ├── virtualisation.nix    # Docker, libvirt, virt-manager
 │   └── nixvim/               # Modular Neovim config
 │       ├── lsp.nix           # LSP, completion, keybinds
 │       ├── telescope.nix     # Fuzzy finder
-│       ├── ai.nix            # Avante AI assistant
-│       └── ...
+│       ├── agentic.nix       # Agentic AI assistant
+│       └── ...               # navigation, ui, terminal, treesitter, comment, gitsigns, options
 │
 └── praytimes/                # Islamic prayer times service
 ```
@@ -129,9 +130,9 @@ Hardware config goes in `vars/hardware-configuration.nix`.
 |------|------------------|
 | `nixos-new-laptop` | Main system, keyboard remap via udev, TLP |
 | `nixos-home-desktop` | NVIDIA drivers, taskchampion sync server |
-| `tablet` | KDE Plasma6 (not Sway), disko partitions |
+| `tablet` | KDE Plasma6, disko partitions |
 | `usb` | LUKS encryption, disko partitions |
-| `iso` | Live image, squashfs disabled |
+| `iso` | Live image |
 
 ## Networking & Proxies
 
@@ -143,7 +144,7 @@ Hardware config goes in `vars/hardware-configuration.nix`.
 
 ## Claude Code Integration
 
-Located in `programming/default.nix`:
+Located in `programming/claude-code.nix` (imported by `programming/default.nix`):
 - Custom API endpoint: `https://api.z.ai/api/anthropic`
 - Model: `glm-5.1`
 - MCP servers: `web-search-prime`, `zai-mcp-server`, `web-reader`, `zread`
@@ -152,9 +153,9 @@ Located in `programming/default.nix`:
 ## Nixvim Configuration
 
 Modular Neovim config in `programming/nixvim/`:
-- Each aspect is a separate module (lsp, telescope, ai, terminal, treesitter, etc.)
+- Each aspect is a separate module (lsp, telescope, agentic, terminal, treesitter, etc.)
 - Built via nixvim wrapper in flake.nix
-- Accessible via `nv` or `nvim` aliases
+- Accessible via the `nvim` binary (nixvim) or the `nv` alias (`neovide --fork`)
 
 ## Custom Shell Applications
 
@@ -163,5 +164,4 @@ Many utilities use `writeShellApplication`:
 - `gui/notitrans-en.nix` - Translate selected text to English
 - `gui/notitrans-dict.nix` - Dictionary lookup
 - `gui/search-select.nix` - Search selected text in Firefox
-- `gui/aiask.nix` - AI assistant shortcut
-- `gui/ensure-class.nix` - Force window to run with specific class
+- `gui/ensure-class-hyprland.nix` - Force a Hyprland window to run with a specific class

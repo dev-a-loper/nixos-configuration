@@ -6,7 +6,6 @@
   ...
 }:
 let
-  aider-ce = unstable.callPackage ./aider-ce/package.nix { };
   userName = config.userConfiguration.name;
   userFullName = config.userConfiguration.fullName;
   userEmail = config.userConfiguration.email;
@@ -60,7 +59,7 @@ in
     pkgs.nur.repos.charmbracelet.crush
 
     unstable.claude-code
-    unstable.aider-chat # aider-ce
+    unstable.aider-chat
     unstable.vlang
     unstable.lazysql
     unstable.sqlit-tui

@@ -9,7 +9,6 @@
   environment.systemPackages = [
 
   ];
-  # services.serviio.enable = true;
   systemd.services.task-sync = {
     enable = true;
     description = "taskwarrior sync server";

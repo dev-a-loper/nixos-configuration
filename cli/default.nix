@@ -14,8 +14,6 @@ let
   userName = config.userConfiguration.name;
 in
 {
-  imports = [ ];
-
   environment.shells = with pkgs; [ zsh ];
   users.defaultUserShell = pkgs.zsh;
   # $ nix search wget
