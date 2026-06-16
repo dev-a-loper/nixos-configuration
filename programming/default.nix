@@ -131,6 +131,8 @@ in
     postgresql_16
     lazygit
     typescript
+    unstable.crush
+    pkgs.nur.repos.charmbracelet.crush
 
     unstable.claude-code
     unstable.aider-chat # aider-ce

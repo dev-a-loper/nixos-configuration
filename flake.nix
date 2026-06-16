@@ -16,6 +16,7 @@
     };
 
     nur.url = "github:nix-community/NUR";
+    nur.inputs.nixpkgs.follows = "unstable";
     nix-alien.url = "github:thiagokokada/nix-alien";
     home-manager = {
       url = "github:nix-community/home-manager/release-26.05";
@@ -52,7 +53,7 @@
       system = "x86_64-linux";
       secretsFile = ./vars/secrets.ehsan.nix;
       hardware-configuration = ./vars/hardware-configuration.nix;
-      system-definer = (
+      system-definer =
         secretsModule: hw:
         let
           specialArgs = inputs // {
@@ -64,63 +65,25 @@
             hardware-configuration = hw;
             llm-agents = inputs.llm-agents.packages.${system};
           };
+          # Each host shares the same shape: specialArgs + system + the
+          # secrets module next to its host module (./hosts/<host>.nix).
+          mk = host: {
+            inherit specialArgs system;
+            modules = [
+              secretsModule
+              ./hosts/${host}.nix
+            ];
+          };
         in
         {
-          base = {
-            inherit specialArgs system;
-            modules = [
-              secretsModule
-              ./hosts/base.nix
-            ];
-          };
-
-          nixos-new-laptop = {
-            inherit specialArgs system;
-            modules = [
-              secretsModule
-              ./hosts/new-laptop.nix
-            ];
-          };
-
-          nixos-laptop = {
-            inherit specialArgs system;
-            modules = [
-              secretsModule
-              ./hosts/laptop.nix
-            ];
-          };
-          nixos-home-desktop = {
-            inherit specialArgs system;
-            modules = [
-              secretsModule
-              ./hosts/home-pc.nix
-            ];
-          };
-
-          tablet = {
-            inherit specialArgs system;
-            modules = [
-              secretsModule
-              ./hosts/tablet.nix
-            ];
-          };
-
-          usb = {
-            inherit specialArgs system;
-            modules = [
-              secretsModule
-              ./hosts/usb.nix
-            ];
-          };
-          iso = {
-            inherit specialArgs system;
-            modules = [
-              secretsModule
-              ./hosts/iso.nix
-            ];
-          };
-        }
-      );
+          base = mk "base";
+          nixos-new-laptop = mk "new-laptop";
+          nixos-laptop = mk "laptop";
+          nixos-home-desktop = mk "home-pc";
+          tablet = mk "tablet";
+          usb = mk "usb";
+          iso = mk "iso";
+        };
     in
     {
       packages."x86_64-linux".nvim = nvim;
