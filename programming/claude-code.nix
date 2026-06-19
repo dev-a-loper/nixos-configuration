@@ -13,10 +13,9 @@ in
     package = unstable.claude-code;
     settings = {
       env = {
-        ANTHROPIC_DEFAULT_HAIKU_MODEL = "glm-5.1";
-        ANTHROPIC_DEFAULT_SONNET_MODEL = "glm-5.1";
-        ANTHROPIC_DEFAULT_OPUS_MODEL = "glm-5.1";
-        CLAUDE_CODE_AUTO_COMPACT_WINDOW = "200000";
+        ANTHROPIC_DEFAULT_HAIKU_MODEL = "glm-5.2";
+        ANTHROPIC_DEFAULT_SONNET_MODEL = "glm-5.2";
+        ANTHROPIC_DEFAULT_OPUS_MODEL = "glm-5.2";
         # https_proxy = "http://localhost:1080";
         ANTHROPIC_AUTH_TOKEN = secrets.ANTHROPIC_AUTH_TOKEN;
         ANTHROPIC_BASE_URL = "https://api.z.ai/api/anthropic";

@@ -91,6 +91,9 @@ in
   environment.systemPackages = [
     slipstream
     paqet
+    pkgs.conntrack-tools
+    pkgs.iptstate
+    pkgs.nmstate
     pkgs.xray
     pkgs.v2ray
     unstable.v2rayn
@@ -183,6 +186,7 @@ in
         Restart = "always";
         # User = "novpn"; # ← runs as novpn, triggers the uid routing rule
         # Group = "novpn";
+        IPMark = 520;
         ExecStart = pkgs.writeShellScript "proxy-start" ''
           if [ -f /etc/current-proxy ]; then
             name=$(cat /etc/current-proxy)
