@@ -90,6 +90,7 @@ in
 
   environment.systemPackages = [
     slipstream
+    pkgs.dig
     paqet
     pkgs.conntrack-tools
     pkgs.iptstate
