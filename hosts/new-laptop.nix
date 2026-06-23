@@ -27,6 +27,8 @@
 
     CPU_ENERGY_PERF_POLICY_ON_BAT = "power";
     CPU_ENERGY_PERF_POLICY_ON_AC = "performance";
+    RUNTIME_PM_ON_AC = "on";
+    RUNTIME_PM_ON_BAT = "on";
 
   };
   hardware.graphics = {
