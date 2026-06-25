@@ -19,6 +19,17 @@ let
       name: value: pkgs.writeShellScriptBin "proxy-${name}" value
     ) proxies;
   };
+  sing-box = unstable.sing-box.overrideAttrs (oldAttrs: rec {
+    version = "1.14.0-alpha.34";
+    src = unstable.fetchFromGitHub {
+      owner = "SagerNet";
+      repo = "sing-box";
+      tag = "v${version}";
+      hash = "sha256-QwG46iZtc5jqWar/28/K9STZHWnLUwofHBlR2mE5lYs=";
+    };
+    vendorHash = "sha256-c99as3LIzPR/IZel76rEOJ/kHmxE0fwJV84eSPG98Ls=";
+    tags = oldAttrs.tags ++ [ "with_cloudflared" ];
+  });
   slipstream = (pkgs.callPackage ./slipstream.nix { });
   paqet = (pkgs.callPackage ./paqet.nix { });
   chproxy = pkgs.writeShellScriptBin "chproxy" ''
@@ -99,7 +110,7 @@ in
     pkgs.v2ray
     unstable.v2rayn
     unstable.tor-browser
-    unstable.sing-box
+    sing-box
     unstable.v2raya
     unstable.tun2socks
     unstable.amnezia-vpn
@@ -200,7 +211,7 @@ in
       path = [
         slipstream
         unstable.xray
-        unstable.sing-box
+        sing-box
         unstable.v2raya
         paqet
         pkgs.udp2raw
