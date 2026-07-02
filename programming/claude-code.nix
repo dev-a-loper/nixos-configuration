@@ -1,5 +1,6 @@
 {
   config,
+  llm-agents,
   unstable,
   ...
 }:
@@ -10,7 +11,7 @@ in
 {
   home-manager.users.${userName}.programs.claude-code = {
     enable = true;
-    package = unstable.claude-code;
+    package = llm-agents.claude-code;
     settings = {
       env = {
         ANTHROPIC_DEFAULT_HAIKU_MODEL = "glm-5.2";
@@ -51,6 +52,14 @@ in
         "headers" = {
           "Authorization" = "Bearer ${secrets.ANTHROPIC_AUTH_TOKEN}";
         };
+      };
+      "agent-browser" = {
+        "command" = "agent-browser";
+        "args" = [
+          "mcp"
+          "--tools"
+          "all"
+        ];
       };
 
       "zai-mcp-server" = {

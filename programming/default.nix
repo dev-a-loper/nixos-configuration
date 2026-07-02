@@ -56,7 +56,7 @@ in
     lazygit
     typescript
 
-    unstable.claude-code
+    # unstable.claude-code
     unstable.aider-chat
     unstable.vlang
     unstable.lazysql
