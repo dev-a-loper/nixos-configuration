@@ -17,6 +17,8 @@ in
         ANTHROPIC_DEFAULT_HAIKU_MODEL = "glm-5.2";
         ANTHROPIC_DEFAULT_SONNET_MODEL = "glm-5.2";
         ANTHROPIC_DEFAULT_OPUS_MODEL = "glm-5.2";
+        AGENT_BROWSER_HEADED = "true";
+        AGENT_BROWSER_IGNORE_HTTPS_ERRORS = "true";
         # https_proxy = "http://localhost:1080";
         ANTHROPIC_AUTH_TOKEN = secrets.ANTHROPIC_AUTH_TOKEN;
         ANTHROPIC_BASE_URL = "https://api.z.ai/api/anthropic";
