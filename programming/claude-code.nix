@@ -55,15 +55,6 @@ in
           "Authorization" = "Bearer ${secrets.ANTHROPIC_AUTH_TOKEN}";
         };
       };
-      "agent-browser" = {
-        "command" = "agent-browser";
-        "args" = [
-          "mcp"
-          "--tools"
-          "all"
-        ];
-      };
-
       "zai-mcp-server" = {
         "type" = "stdio";
         "command" = "npx";
