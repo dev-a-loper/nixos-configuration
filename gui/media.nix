@@ -10,6 +10,7 @@
     mkvtoolnix
     ffmpeg-full
     vlc
+    mpv
     popcorntime
     unstable.yt-dlp
     unstable.yt-dlg
