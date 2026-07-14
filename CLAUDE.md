@@ -102,7 +102,23 @@ flake.nix → nixosConfigurations
 
 ## Secrets Management
 
-Secrets are stored in `vars/secrets.ehsan.nix` (gitignored) and injected into `config.userConfiguration.secrets` via a module in `flake.nix`. The full secrets schema is defined in `system/userInfo.nix` via the `userConfiguration.secrets` option.
+Secrets live in `vars/secrets.*.nix` (gitignored, matched by `vars/*.nix` in `.gitignore`):
+
+- `vars/secrets.default.nix` — **boot parent**: shared infrastructure (proxy
+  generation via `utils/sing-box.nix`, OpenVPN configs, shared API keys) plus
+  Ehsan's full profile (location, keys, password, filtered proxy set). Also
+  exposes `allProxies` (the full, unfiltered proxy set).
+- `vars/secrets.<name>.nix` — each becomes a runtime-switchable
+  `specialisation.<name>` (auto-discovered by `flake.nix` via `readDir`). It is a
+  **delta** on the parent: it inherits shared keys via `inheritParentConfig` and
+  `mkForce`-overrides only what differs (identity, location, keys, proxy set),
+  plus any system overrides (e.g. a different user's identity +
+  timezone/service tweaks).
+
+They are injected into `config.userConfiguration.secrets`; the full schema is
+defined in `system/userInfo.nix`. The secrets evaluate because the flake is
+accessed via the `path:` fetcher — always build with `--impure`
+(`--flake path:./#…` from inside the repo).
 
 Access secrets in modules via `config.userConfiguration.secrets.<key>`.
 

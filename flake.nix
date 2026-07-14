@@ -1,5 +1,5 @@
 {
-  description = "Ehsan's system configuration";
+  description = "Ehsan's system configuration (self-contained, specialisation-driven)";
   inputs = {
     disko.url = "github:nix-community/disko";
     disko.inputs.nixpkgs.follows = "nixpkgs";
@@ -45,53 +45,81 @@
       ...
     }@inputs:
     let
+      system = "x86_64-linux";
       nixvim' = nixvim.legacyPackages.${system};
       nvim = nixvim'.makeNixvimWithModule {
         pkgs = inputs.unstable.legacyPackages.${system};
         module = import ./programming/nixvim;
       };
-      system = "x86_64-linux";
-      secretsFile = ./vars/secrets.ehsan.nix;
+
       hardware-configuration = ./vars/hardware-configuration.nix;
-      system-definer =
-        secretsModule: hw:
+      # Boot parent: shared infra + Ehsan's profile. Every host boots into this.
+      defaultSecrets = ./vars/secrets.default.nix;
+
+      # ── profile auto-discovery ───────────────────────────────────────────
+      # Each vars/secrets.<name>.nix (except `default`) becomes a runtime-
+      # switchable `specialisation.<name>`. The profile module overrides only
+      # what differs from the parent (see secrets.*.nix). readDir sees the
+      # gitignored secrets because the flake is accessed via the `path:` fetcher
+      # (build with `path:.` / --impure) — the same reason hardware-configuration
+      # and the secrets already evaluate today.
+      profileSecrets =
         let
-          specialArgs = inputs // {
-            HyprQuickFrame = inputs.HyprQuickFrame.packages.${system}.default;
-            unstable = import inputs.unstable {
-              inherit system;
-              config.allowUnfree = true;
-            };
-            hardware-configuration = hw;
-            llm-agents = inputs.llm-agents.packages.${system};
-          };
-          # Each host shares the same shape: specialArgs + system + the
-          # secrets module next to its host module (./hosts/<host>.nix).
-          mk = host: {
-            inherit specialArgs system;
-            modules = [
-              secretsModule
-              ./hosts/${host}.nix
-            ];
-          };
+          dir = ./vars;
+          matchName = builtins.match "secrets\\.([^.]+)\\.nix";
+          isProfile = f: f != "secrets.default.nix" && matchName f != null;
         in
-        {
-          base = mk "base";
-          nixos-new-laptop = mk "new-laptop";
-          nixos-laptop = mk "laptop";
-          nixos-home-desktop = mk "home-pc";
-          tablet = mk "tablet";
-          usb = mk "usb";
-          iso = mk "iso";
+        builtins.map (f: {
+          name = builtins.head (matchName f);
+          file = dir + "/${f}";
+        }) (builtins.filter isProfile (builtins.attrNames (builtins.readDir dir)));
+
+      # One specialisation per profile, each inheriting the parent config and
+      # layering the profile's overrides on top.
+      specialisations = builtins.listToAttrs (
+        builtins.map (p: {
+          name = p.name;
+          value = {
+            inheritParentConfig = true;
+            configuration.imports = [ p.file ];
+          };
+        }) profileSecrets
+      );
+
+      specialArgs = inputs // {
+        HyprQuickFrame = inputs.HyprQuickFrame.packages.${system}.default;
+        unstable = import inputs.unstable {
+          inherit system;
+          config.allowUnfree = true;
         };
+        inherit hardware-configuration;
+        llm-agents = inputs.llm-agents.packages.${system};
+      };
+
+      # Each host shares the same shape: specialArgs + system + the default
+      # secrets module next to its host module (./hosts/<host>.nix), plus the
+      # auto-generated specialisations.
+      makeConfig = host: {
+        inherit specialArgs system;
+        modules = [
+          defaultSecrets
+          ./hosts/${host}.nix
+          { specialisation = specialisations; }
+        ];
+      };
     in
     {
       packages."x86_64-linux".nvim = nvim;
-      packages."x86_64-linux".iso = inputs.self.nixosConfigurations.iso.config.system.build.isoImage;
-      packages."x86_64-linux".usb = inputs.self.nixosConfigurations.usb.config.system.build.sdImage;
-      nixosConfigurations = builtins.mapAttrs (name: value: (nixpkgs.lib.nixosSystem value)) (
-        system-definer secretsFile hardware-configuration
-      );
-      inherit system-definer;
+      packages."x86_64-linux".iso = self.nixosConfigurations.iso.config.system.build.isoImage;
+      packages."x86_64-linux".usb = self.nixosConfigurations.usb.config.system.build.sdImage;
+      nixosConfigurations = builtins.mapAttrs (_: nixpkgs.lib.nixosSystem) {
+        base = makeConfig "base";
+        nixos-new-laptop = makeConfig "new-laptop";
+        nixos-laptop = makeConfig "laptop";
+        nixos-home-desktop = makeConfig "home-pc";
+        tablet = makeConfig "tablet";
+        usb = makeConfig "usb";
+        iso = makeConfig "iso";
+      };
     };
 }
