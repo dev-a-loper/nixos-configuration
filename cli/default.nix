@@ -86,6 +86,7 @@ in
       ripgrep
       sd
       fd
+      woeusb
       bat
       jcal
       jq
