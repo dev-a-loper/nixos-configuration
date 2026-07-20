@@ -7,7 +7,7 @@
   networking.hostName = "nixos-home-desktop"; # Define your hostname.
 
   environment.systemPackages = [
-
+    (pkgs.llama-cpp.override { cudaSupport = true; })
   ];
   systemd.services.task-sync = {
     enable = true;
@@ -60,11 +60,16 @@
     package = config.boot.kernelPackages.nvidiaPackages.stable;
   };
   boot.loader.grub.gfxmodeEfi = "1024x768";
-  nix.settings.substituters = [ "https://nix-community.cachix.org" ];
-  nix.settings.trusted-public-keys = [
-    # Compare to the key published at https://nix-community.org/cache
-    "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
-  ];
+
+  nix.settings = {
+    extra-substituters = [
+      "https://cache.nixos-cuda.org"
+    ];
+
+    extra-trusted-public-keys = [
+      "cache.nixos-cuda.org:74DUi4Ye579gUqzH4ziL9IyiJBlDpMRn9MBN8oNan9M="
+    ];
+  };
   # nixpkgs.config.cudaSupport = true;
 
 }

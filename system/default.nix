@@ -22,7 +22,6 @@
   environment.systemPackages = [
     pkgs.linux-wifi-hotspot
     unstable.ollama
-    unstable.llama-cpp
   ];
   systemd = {
     user.services.polkit-gnome-authentication-agent-1 = {
