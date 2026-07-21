@@ -1,4 +1,9 @@
-{ pkgs, config, ... }:
+{
+  pkgs,
+  unstable,
+  config,
+  ...
+}:
 {
   imports = [
     ./base.nix
@@ -7,7 +12,7 @@
   networking.hostName = "nixos-home-desktop"; # Define your hostname.
 
   environment.systemPackages = [
-    (pkgs.llama-cpp.override { cudaSupport = true; })
+    (unstable.llama-cpp.override { cudaSupport = true; })
   ];
   systemd.services.task-sync = {
     enable = true;
