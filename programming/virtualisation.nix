@@ -24,7 +24,7 @@ in
       };
     };
   };
-  environment.systemPackages = [ pkgs.vagrant ];
+  # environment.systemPackages = [ pkgs.vagrant ];
   users.users.${userName}.extraGroups = [ "libvirtd" ];
 
 }

@@ -48,8 +48,6 @@ in
     git
     gcc
     unstable.bun
-    unstable.playwright-mcp
-    unstable.playwright-driver.browsers
     unstable.deno
     cloc
     postgresql_16
@@ -57,7 +55,7 @@ in
     typescript
 
     # unstable.claude-code
-    unstable.aider-chat
+    # unstable.aider-chat
     unstable.vlang
     unstable.lazysql
     unstable.sqlit-tui
