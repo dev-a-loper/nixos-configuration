@@ -65,7 +65,6 @@ in
   networking.nftables.enable = true;
   networking.firewall.backend = "nftables";
   services.vnstat.enable = true;
-  services.expressvpn.enable = true;
   services.openvpn.servers = {
     openvpn = {
       autoStart = false;
@@ -110,16 +109,12 @@ in
     pkgs.nmstate
     pkgs.xray
     pkgs.v2ray
-    unstable.v2rayn
-    unstable.tor-browser
     sing-box
-    unstable.v2raya
     unstable.tun2socks
     unstable.amnezia-vpn
     unstable.amneziawg-go
     unstable.amneziawg-tools
     unstable.tor
-    pkgs.expressvpn
     chproxy
     unstable.wireguard-tools
     pkgs.udp2raw
@@ -214,7 +209,6 @@ in
         slipstream
         unstable.xray
         sing-box
-        unstable.v2raya
         paqet
         pkgs.udp2raw
       ];
