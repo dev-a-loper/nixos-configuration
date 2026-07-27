@@ -113,19 +113,14 @@
       servers.graphql.package = pkgs.graphql-language-service-cli;
       servers.dockerls.enable = true;
       servers.docker_compose_language_service.enable = true;
-      servers.vtsls.enable = true;
-
-      servers.vtsls.extraOptions.single_file_support = false;
-      servers.vtsls.rootMarkers = [
-        "package.json"
-        "tsconfig.json"
-      ];
-      servers.vtsls.extraOptions.root_dir.__raw = ''
-        function(bufnr, ondir) if vim.fs.root(bufnr, { "package.json" }) ~= nil then
-                ondir(vim.fs.root(bufnr, { "package.json" }))
-              end
-            end
-      '';
+      servers.tsgo = {
+        enable = true;
+        rootMarkers = [
+          "package.json"
+          "tsconfig.json"
+        ];
+        extraOptions.single_file_support = false;
+      };
 
       servers.denols = {
         enable = true;
