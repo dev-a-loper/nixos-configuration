@@ -1,55 +1,57 @@
-# Colors (Baitong)
+# Colors (Cool Slate) — calm, desaturated blue-slate palette for the AI window.
+# Low-saturation, soft foreground, gentle dark background: easy on the eyes
+# for long sessions while reading clearly different from the neutral-gray default.
 
 [colors.primary]
-background = '#112a2a'
-foreground = '#33ff33'
+background = '#1c2128'
+foreground = '#c5cdd9'
 
 [colors.cursor]
-text = '#112a2a'
-cursor = '#ff00ff'
+text = '#1c2128'
+cursor = '#8fb4d9'
 
 [colors.vi_mode_cursor]
-text = '#112a2a'
-cursor = '#ff00ff'
+text = '#1c2128'
+cursor = '#c5a3d4'
 
 [colors.search]
-matches = { foreground = '#000000', background = '#1AE642' }
-focused_match = { foreground = '#000000', background = '#ff00ff' }
+matches = { foreground = '#1c2128', background = '#e0c079' }
+focused_match = { foreground = '#1c2128', background = '#c5a3d4' }
 
 [colors.hints]
-start = { foreground = '#1d1f21', background = '#1AE642' }
-end = { foreground = '#1AE642', background = '#1d1f21' }
+start = { foreground = '#1c2128', background = '#8fb4d9' }
+end = { foreground = '#8fb4d9', background = '#2c3340' }
 
 [colors.line_indicator]
-foreground = '#33ff33'
-background = '#1d1f21'
+foreground = '#c5cdd9'
+background = '#2c3340'
 
 [colors.footer_bar]
-background = '#731d8b'
-foreground = '#ffffff'
+background = '#2c3340'
+foreground = '#c5cdd9'
 
 [colors.selection]
-text = '#112a2a'
-background = '#1AE642'
+text = '#1c2128'
+background = '#8fb4d9'
 
 # Normal colors
 [colors.normal]
-black   = '#000000'
-red     = '#f77272'
-green   = '#33ff33'
-yellow  = '#1AE642'
-blue    = '#68FDFE'
-magenta = '#ff66ff'
-cyan    = '#87CEFA'
-white   = '#dbdbd9'
+black   = '#2c3340'
+red     = '#d9898f'
+green   = '#a3c293'
+yellow  = '#e0c079'
+blue    = '#8fb4d9'
+magenta = '#c5a3d4'
+cyan    = '#8fc6c9'
+white   = '#9aa5b8'
 
 # Bright colors
 [colors.bright]
-black   = '#ffffff'
-red     = '#f77272'
-green   = '#33ff33'
-yellow  = '#1AE642'
-blue    = '#68FDFE'
-magenta = '#ff66ff'
-cyan    = '#68FDFE'
-white   = '#dbdbd9'
+black   = '#6b7488'
+red     = '#e6a3a8'
+green   = '#bcd6ab'
+yellow  = '#ecd29a'
+blue    = '#a8c8e6'
+magenta = '#d6bbe6'
+cyan    = '#a8dbe0'
+white   = '#e6ebf2'
