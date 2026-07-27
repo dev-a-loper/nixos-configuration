@@ -40,6 +40,9 @@ in
 
   environment.systemPackages = with pkgs; [
     vls
+    sqlite
+    unstable.turso
+    pv
     unstable.telegram-bot-api
     unstable.pnpm
     unstable.nodejs_24
