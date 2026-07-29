@@ -39,7 +39,8 @@ in
   nixpkgs.overlays = [ fenix.overlays.default ];
 
   environment.systemPackages = with pkgs; [
-  glab
+    unstable.go
+    glab
     vls
     sqlite
     unstable.turso
