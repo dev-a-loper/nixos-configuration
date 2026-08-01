@@ -96,9 +96,9 @@ in
     torsocks.enable = true;
   };
   programs.throne.enable = true;
-  programs.throne.tunMode.enable = true;
-  # programs.throne.tunMode.setuid = false;
-  # programs.throne.package = unstable.throne;
+  programs.throne.tunMode.enable = false;
+  programs.throne.tunMode.setuid = false;
+  programs.throne.package = unstable.throne;
 
   environment.systemPackages = [
     slipstream

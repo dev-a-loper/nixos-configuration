@@ -323,6 +323,85 @@ let
 
       wait "$SB_PID"
     '';
+
+  # ── system-wireguard triple generator (shared, secret-free) ──────────────
+  #
+  # Profile modules call `mkProxies` to build their proxy set from a registry of
+  # carrier outbounds. Each carrier becomes three proxies:
+  #   <name>     plain          → mixed:1080
+  #   <name>tun  + TUN inbound
+  #   <name>wg   system wireguard riding the carrier (policy-routed `www`)
+  #
+  # The `*wg` tunnel rides its carrier: the wireguard endpoint's own packets
+  # detour via the carrier outbound (tag "proxy") and it surfaces as a
+  # policy-routed `www` interface (route.final = "wire"). `wgEndpoint` is the raw
+  # wireguard endpoint blob to ride — overlaid with `system-wg-struct` below so
+  # any blob works (e.g. a Cloudflare WARP blob, or the classic systemWgEndpoint
+  # which already carries these fields). `wgBypass` is the extra CIDRs kept on
+  # the main table (caller-supplied, since it carries server IPs); mkSystemWg
+  # adds the carrier's own IP + RFC1918/loopback automatically.
+
+  # structural overlay that turns any raw wg endpoint into a carrier-riding
+  # system tunnel. Idempotent on blobs that already carry these fields.
+  system-wg-struct = {
+    system = true;
+    name = "www";
+    detour = "proxy";
+    tag = "wire";
+  };
+  mkSystemEndpoint = raw: (read raw) // system-wg-struct;
+
+  # a system-wg tunnel listens on :3080 (kept apart from :1080 so it never
+  # clashes with another already-running proxy).
+  system-wg-mixed-in = {
+    type = "mixed";
+    tag = "mixed-in";
+    listen = "0.0.0.0";
+    listen_port = 3080;
+  };
+
+  mkProxyTriple =
+    {
+      name,
+      outbound,
+      wgEndpoint,
+      wgBypass,
+    }:
+    {
+      ${name} = mkSingbox (create-config { inherit outbound; });
+      "${name}tun" = mkSingbox (create-config {
+        inherit outbound;
+        tun = true;
+      });
+      "${name}wg" = mkSystemWg {
+        config-json = create-config {
+          inherit outbound;
+          wireguard = mkSystemEndpoint wgEndpoint;
+          final = "wire";
+          inbounds = [ system-wg-mixed-in ];
+          direct-dns = false;
+          default-domain-resolver = "dns-remote";
+          dns-remote-type = "udp";
+          find-process = false;
+        };
+        bypass = wgBypass;
+      };
+    };
+
+  mkProxies =
+    {
+      registry,
+      wgEndpoint,
+      wgBypass,
+    }:
+    builtins.foldl' (
+      acc: name:
+      acc
+      // mkProxyTriple {
+        inherit name wgEndpoint wgBypass;
+        outbound = registry.${name};
+      }
+    ) { } (builtins.attrNames registry);
 in
 {
   inherit
@@ -331,10 +410,14 @@ in
     mkSingbox
     mkXray
     mkSystemWg
+    mkProxyTriple
+    mkProxies
+    mkSystemEndpoint
     ;
   inherit
     default-mixed-in
     default-tun-in
     direct-private-rule
+    system-wg-mixed-in
     ;
 }
