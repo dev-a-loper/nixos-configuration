@@ -58,7 +58,7 @@ in
     postgresql_16
     lazygit
     typescript
-
+    python314Packages.jupyterlab
     # unstable.claude-code
     # unstable.aider-chat
     unstable.vlang
