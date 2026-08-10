@@ -1,0 +1,332 @@
+# chproxy — sing-box switcher (plain bash + jq).
+#
+# State:
+#   /etc/current-proxy        one line: "<name> [-t] [-w]"; seeded to "default"
+#   /etc/proxies.json         all carrier outbounds (runtime, user-maintained)
+#   /etc/chproxy/chproxy.json base config + the single wg front (Nix-rendered)
+#
+# Modes:
+#   chproxy <name> [-t] [-w]  switch + restart the service
+#   chproxy -d                daemon (what the systemd unit runs)
+#   chproxy -l / --list       list carriers + the wg front
+#   chproxy -s / --status     show current selection
+#   chproxy -h / --help
+#
+# The name "default" resolves to chproxy.json's defaults.proxy.
+set -uo pipefail
+
+# ── paths (env-overridable, e.g. for testing) ──────────────────────────────
+: "${CHPROXY_CONF:=/etc/chproxy/chproxy.json}"
+: "${CHPROXY_PROXIES:=/etc/proxies.json}"
+: "${CHPROXY_STATE:=/etc/current-proxy}"
+CONF="$CHPROXY_CONF"
+PROXIES="$CHPROXY_PROXIES"
+STATE="$CHPROXY_STATE"
+
+die() { echo "chproxy: $*" >&2; exit 1; }
+
+usage() {
+    cat <<'EOF'
+Usage:
+  chproxy <name> [-t] [-w]   switch active proxy and restart the service
+  chproxy -d                 run as the daemon (reads /etc/current-proxy)
+  chproxy -l, --list         list available carriers and the wg front
+  chproxy -s, --status       show the current selection
+  chproxy -h, --help         this help
+
+Switch flags:
+  -t        also enable the TUN inbound (transparent capture)
+  -w        also enable this profile's wireguard front (policy-routed www)
+
+State is stored on one line of /etc/current-proxy as "<name> [-t] [-w]".
+The name "default" resolves to chproxy.json's defaults.proxy.
+EOF
+}
+
+# ── globals shared between the daemon and its cleanup trap ─────────────────
+SB_PID=""
+TMP=""
+WG_ROUTING=0
+IFACE="www"
+TABLE=""
+FWMARK=""
+BYPASS_CIDRS=()
+
+# ── arg parsing (manual: no optional-argument flags anymore) ───────────────
+NAME=""
+TUN=false
+WG_FLAG=false
+MODE="switch"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -d)          MODE=daemon;  shift ;;
+        -l|--list)   MODE=list;    shift ;;
+        -s|--status) MODE=status;  shift ;;
+        -h|--help)   usage; exit 0 ;;
+        -t)          TUN=true;     shift ;;
+        -w)          WG_FLAG=true; shift ;;
+        --)
+            shift
+            while [ $# -gt 0 ]; do
+                if [ -z "$NAME" ]; then NAME="$1"; else die "unexpected argument: $1"; fi
+                shift
+            done
+            ;;
+        -*) die "unknown option: $1" ;;
+        *)
+            if [ -z "$NAME" ]; then NAME="$1"; else die "unexpected argument: $1"; fi
+            shift
+            ;;
+    esac
+done
+
+# ── compose a full sing-box config: port of create-config ──────────────────
+# args: <tun:bool> <outbound-json> <wg-json-or-null>
+compose_config() {
+    local tun="$1" outbound="$2" wg="$3"
+    jq -n \
+        --argjson tun "$tun" \
+        --argjson outbound "$outbound" \
+        --argjson wg "$wg" \
+        --rawfile base "$CONF" \
+        -f - <<'JQ'
+($base | fromjson) as $B
+# ── flags ──
+| ($wg != null)                                                  as $has_front
+| ($outbound != null and ($outbound.type // "") == "wireguard")  as $is_wg_ob   # swfast
+# ── final / proxy tag ──
+| (if $has_front then ($wg.tag       // "wire")
+                 else ($outbound.tag // "proxy") end)                         as $final_tag
+# ── dns profile: the wg branch flips 4 knobs at once ──
+| (if $has_front
+   then { direct_dns: false, dns_remote_type: "udp", find_process: false, ddr: "dns-remote" }
+   else { direct_dns: true,  dns_remote_type: "tls", find_process: true,  ddr: null }
+   end)                                                                       as $dp
+| (if $dp.ddr != null then $dp.ddr
+   elif $dp.direct_dns  then "dns-direct"
+   else                       "dns-local" end)                                as $resolver
+# ── outbounds: carrier stays when a front rides it; a wg-type outbound
+#    (swfast) is NOT placed here — it becomes an endpoint below. ──
+| ( if     $has_front  then [ $outbound, {"type":"direct","tag":"direct"} ]
+    elif   $is_wg_ob   then [ {"type":"direct","tag":"direct"} ]
+    else                 [ $outbound, {"type":"direct","tag":"direct"} ]
+    end)                                                                      as $outbounds
+# ── endpoints: front, or swfast-as-direct-exit, or none ──
+| ( if     $has_front  then [ $wg ]
+    elif   $is_wg_ob   then [ $outbound ]
+    else                 []
+    end)                                                                      as $endpoints
+# ── dns servers: remote rides final; direct only when direct_dns ──
+| ( [ ($B.dns.remote_template + { detour: $final_tag, type: $dp.dns_remote_type }) ]
+    + (if $dp.direct_dns then [ $B.dns.direct ] else [] end)
+    + [ $B.dns.local ] )                                                      as $dns_servers
+# ── inbounds: front → :3080, else :1080; +tun ──
+| ( [ (if $has_front then $B.system_wg_mixed_inbound else $B.mixed_inbound end) ]
+    + (if $tun then [ $B.tun_inbound ] else [] end) )                         as $inbounds
+# ── route rules: sniff (const inbound list) + tun-only private rule + hijack ──
+| ( [ ($B.sniff_rule + { inbound: ["mixed-in", "tun-in"] }) ]
+    + (if $tun then [ $B.direct_private_rule ] else [] end)
+    + [ $B.hijack_dns_rule ] )                                                as $rules
+| {
+    "certificate": { "store": "system" },
+    "dns":          { "rules": $B.dns.localhost_rules, "servers": $dns_servers },
+    "endpoints":    $endpoints,
+    "experimental": $B.experimental,
+    "outbounds":    $outbounds,
+    "inbounds":     $inbounds,
+    "log":          { "level": "info" },
+    "route": {
+        "default_domain_resolver": { "server": $resolver, "strategy": "" },
+        "final":        $final_tag,
+        "find_process": $dp.find_process,
+        "rule_set":     [],
+        "rules":        $rules
+    }
+  }
+JQ
+}
+
+# ── wg policy routing: faithful port of mkSystemWg ──────────────────────────
+# Installs a default route via the wg interface into a policy table, keeps the
+# carrier server + bypass CIDRs + RFC1918/loopback on the main table, and adds
+# a fwmark rule so sing-box's own packets don't recurse into the tunnel.
+setup_wg_routing() {
+    local carrier_ip="$1"
+    TABLE="$(jq -r '.wg.table' "$CONF")"
+    FWMARK="$(jq -r '.wg.fwmark' "$CONF")"
+    IFACE="$(jq -r '.wg.interface' "$CONF")"
+    mapfile -t BYPASS_CIDRS < <(jq -r '[.wg.wg_bypass[]?, .private_bypass[]?][]' "$CONF")
+    # carrier must stay on the main table or its own traffic loops into the tunnel
+    BYPASS_CIDRS=("$carrier_ip/32" "${BYPASS_CIDRS[@]}")
+
+    # wait for sing-box to bring the interface up (same guard as the old nix)
+    local i=0
+    while ! ip link show "$IFACE" >/dev/null 2>&1; do
+        if ! kill -0 "$SB_PID" 2>/dev/null; then
+            echo "chproxy: sing-box exited before $IFACE came up" >&2
+            exit 1
+        fi
+        i=$((i + 1))
+        if [ "$i" -gt 150 ]; then
+            echo "chproxy: timed out waiting for $IFACE" >&2
+            kill "$SB_PID" 2>/dev/null || true
+            exit 1
+        fi
+        sleep 0.2
+    done
+
+    ip route replace default dev "$IFACE" table "$TABLE"
+    local cidr
+    for cidr in "${BYPASS_CIDRS[@]}"; do
+        ip rule add to "$cidr" lookup main priority 900 2>/dev/null || true
+    done
+    ip rule add fwmark "$FWMARK" lookup main priority 900 2>/dev/null || true
+    ip rule add lookup "$TABLE" priority 2000 2>/dev/null || true
+    WG_ROUTING=1
+}
+
+cleanup() {
+    trap - EXIT INT TERM
+    if [ "$WG_ROUTING" = 1 ]; then
+        ip route del default dev "$IFACE" table "$TABLE" 2>/dev/null || true
+        local cidr
+        for cidr in "${BYPASS_CIDRS[@]}"; do
+            ip rule del to "$cidr" lookup main priority 900 2>/dev/null || true
+        done
+        ip rule del fwmark "$FWMARK" lookup main priority 900 2>/dev/null || true
+        ip rule del lookup "$TABLE" priority 2000 2>/dev/null || true
+    fi
+    [ -n "$SB_PID" ] && { kill "$SB_PID" 2>/dev/null || true; }
+    [ -n "$TMP" ] && rm -f "$TMP"
+}
+
+# ── modes ───────────────────────────────────────────────────────────────────
+do_switch() {
+    [ -f "$CONF" ]    || die "missing config $CONF"
+    [ -f "$PROXIES" ] || die "missing proxy list $PROXIES (edit it to add carriers)"
+    [ -n "$NAME" ]    || { usage; exit 2; }
+
+    jq -e --arg n "$NAME" 'has($n)' "$PROXIES" >/dev/null \
+        || die "unknown proxy '$NAME' (see: chproxy -l)"
+
+    if $WG_FLAG; then
+        # reject stacking a front on a wireguard outbound (e.g. swfast)
+        if [ "$(jq -r --arg n "$NAME" '.[$n].type // ""' "$PROXIES")" = "wireguard" ]; then
+            die "cannot stack -w on a wireguard outbound '$NAME'"
+        fi
+        # ensure a front is actually configured for this profile
+        [ "$(jq -r '.wg_front != null' "$CONF")" = "true" ] \
+            || die "no wg_front configured in $CONF"
+    fi
+
+    # one-line state: "<name>" + " -t"? + " -w"?
+    local line="$NAME"
+    $TUN     && line="$line -t"
+    $WG_FLAG && line="$line -w"
+    printf '%s\n' "$line" | sudo tee "$STATE" >/dev/null \
+        || die "failed to write $STATE"
+
+    local svc
+    svc="$(jq -r '.service // "chproxy"' "$CONF")"
+    sudo systemctl restart "$svc" || die "failed to restart $svc"
+    echo "chproxy: → $line (restarted $svc)"
+}
+
+do_daemon() {
+    [ -f "$CONF" ]    || die "missing config $CONF"
+    [ -f "$PROXIES" ] || die "missing proxy list $PROXIES"
+    jq -e . "$CONF" >/dev/null || die "malformed $CONF"
+    jq -e . "$PROXIES" >/dev/null || die "malformed $PROXIES"
+
+    local singbox_bin default_proxy state_line
+    singbox_bin="$(jq -r '.singbox_bin // "sing-box"' "$CONF")"
+    default_proxy="$(jq -r '.defaults.proxy // ""' "$CONF")"
+
+    if [ -f "$STATE" ]; then
+        state_line="$(cat "$STATE")"
+    else
+        state_line="default"
+    fi
+    [ -n "$state_line" ] || state_line="default"
+
+    # parse "<name> [-t] [-w]"
+    local -a toks
+    read -r -a toks <<< "$state_line"
+    NAME="${toks[0]:-default}"
+    TUN=false
+    WG_FLAG=false
+    local tok
+    for tok in "${toks[@]:1}"; do
+        case "$tok" in
+            -t) TUN=true ;;
+            -w) WG_FLAG=true ;;
+            *) echo "chproxy: ignoring unknown state flag '$tok'" >&2 ;;
+        esac
+    done
+
+    [ "$NAME" = "default" ] && NAME="$default_proxy"
+    [ -n "$NAME" ] || die "no proxy selected and no defaults.proxy configured"
+
+    local outbound wg_endpoint carrier_ip
+    outbound="$(jq --arg n "$NAME" '.[$n] // null' "$PROXIES")"
+    [ "$outbound" != "null" ] || die "proxy '$NAME' not in $PROXIES"
+
+    wg_endpoint="null"
+    carrier_ip=""
+    if $WG_FLAG; then
+        wg_endpoint="$(jq '.wg_front // null' "$CONF")"
+        [ "$wg_endpoint" != "null" ] || die "-w requested but no wg_front in $CONF"
+        carrier_ip="$(jq -r '.server // empty' <<< "$outbound")"
+        [ -n "$carrier_ip" ] || die "carrier '$NAME' has no .server; cannot install wg routing"
+    fi
+
+    TMP="$(mktemp /tmp/chproxy-config.XXXXXX.json)"
+    compose_config "$TUN" "$outbound" "$wg_endpoint" > "$TMP" || { rm -f "$TMP"; die "config composition failed"; }
+
+    export ENABLE_DEPRECATED_WIREGUARD_OUTBOUND=true
+    trap cleanup EXIT INT TERM
+    "$singbox_bin" run -c "$TMP" &
+    SB_PID=$!
+    if $WG_FLAG; then
+        setup_wg_routing "$carrier_ip"
+    fi
+    wait "$SB_PID"
+}
+
+do_list() {
+    [ -f "$PROXIES" ] || die "missing $PROXIES"
+    echo "[carriers]"
+    jq -r 'keys[]' "$PROXIES" | sed 's/^/  /'
+    if [ -f "$CONF" ]; then
+        echo "[wg front]"
+        jq -r '
+          .wg_front
+          | if . == null
+            then "  (none — -w disabled)"
+            else "  enabled (interface: " + (.name // "?") + ")"
+            end
+        ' "$CONF" 2>/dev/null || true
+    fi
+}
+
+do_status() {
+    if [ -f "$STATE" ]; then
+        echo "current: $(cat "$STATE")"
+    else
+        echo "current: default (no state file)"
+    fi
+    if [ -f "$CONF" ]; then
+        local svc
+        svc="$(jq -r '.service // "chproxy"' "$CONF")"
+        systemctl status "$svc" --no-pager 2>/dev/null | sed -n '1,5p' || true
+    fi
+}
+
+case "$MODE" in
+    list)   do_list ;;
+    status) do_status ;;
+    daemon) do_daemon ;;
+    switch) do_switch ;;
+    *)      usage; exit 2 ;;
+esac

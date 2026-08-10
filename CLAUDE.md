@@ -104,14 +104,14 @@ flake.nix → nixosConfigurations
 
 Secrets live in `vars/secrets.*.nix` (gitignored, matched by `vars/*.nix` in `.gitignore`):
 
-- `vars/secrets.default.nix` — **boot parent**: shared infrastructure (proxy
-  generation via `utils/sing-box.nix`, OpenVPN configs, shared API keys) plus
-  Ehsan's full profile (location, keys, password, filtered proxy set). Also
-  exposes `allProxies` (the full, unfiltered proxy set).
+- `vars/secrets.default.nix` — **boot parent**: forwards shared infrastructure
+  (OpenVPN configs, API keys) plus Ehsan's profile (location, keys, password) and
+  selects Ehsan's wireguard front (`warpEndpoint`). Carrier outbounds are **not**
+  in Nix — they're the runtime file `/etc/proxies.json`.
 - `vars/secrets.<name>.nix` — each becomes a runtime-switchable
   `specialisation.<name>` (auto-discovered by `flake.nix` via `readDir`). It is a
   **delta** on the parent: it inherits shared keys via `inheritParentConfig` and
-  `mkForce`-overrides only what differs (identity, location, keys, proxy set),
+  `mkForce`-overrides only what differs (identity, location, keys, the wg front),
   plus any system overrides (e.g. a different user's identity +
   timezone/service tweaks).
 
@@ -127,8 +127,8 @@ Required keys:
 | Key | Purpose |
 |-----|---------|
 | `HASHED_PASSWORD` | User password hash |
-| `proxies` | Attrset of shell scripts for different proxies |
-| `defaultProxy` | Default proxy name |
+| `wgFront` | Raw JSON of this profile's single wireguard front (the system-wg interface `chproxy -w` brings up) |
+| `defaultProxy` | Default proxy name (a key in the runtime `/etc/proxies.json`); `"default"` resolves to this |
 | `OPENAI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | AI API keys |
 | `OPENAI_API_HOST` | API host override |
 | `location` | `{latitude, longitude}` for praytimes/redshift |
@@ -155,7 +155,13 @@ Hardware config goes in `vars/hardware-configuration.nix`.
 - Proxy always available on `localhost:1080` (socks5)
 - VPN options: ExpressVPN, OpenVPN, AmneziaVPN (awg), Tor
 - `slipstream` package provides covert DNS channel
-- `chproxy` utility (systemd proxy.service) switches between proxies
+- `chproxy` (standalone bash, `utils/chproxy/chproxy`) switches the active proxy
+  and restarts `chproxy.service`. `chproxy <name> [-t] [-w]` — `-t` enables the
+  TUN inbound, `-w` enables the profile's wireguard front (policy-routed `www`).
+  `chproxy -d` is the daemon (what the unit runs).
+- Carrier outbounds live in the **runtime** `/etc/proxies.json` (edit directly,
+  no rebuild); the per-profile base config + wg front are Nix-rendered to
+  `/etc/chproxy/chproxy.json`. Active selection is in `/etc/current-proxy`.
 - Configured in `system/network.nix`
 
 ## Claude Code Integration
@@ -176,6 +182,7 @@ Modular Neovim config in `programming/nixvim/`:
 ## Custom Shell Applications
 
 Many utilities use `writeShellApplication`:
+- `utils/chproxy.nix` - The sing-box proxy switcher (`utils/chproxy/chproxy`); CLI + daemon
 - `gui/notitrans-fa.nix` - Translate selected text to Persian
 - `gui/notitrans-en.nix` - Translate selected text to English
 - `gui/notitrans-dict.nix` - Dictionary lookup

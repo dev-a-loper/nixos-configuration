@@ -6,18 +6,10 @@
 }:
 let
   secrets = config.userConfiguration.secrets;
-  proxies = secrets.proxies;
-  defaultProxy = secrets.defaultProxy;
   awg-config = pkgs.writeTextFile {
     name = "awg-config";
     text = secrets.awg-config;
     destination = "/awg.conf";
-  };
-  proxiesDir = pkgs.symlinkJoin {
-    name = "proxies";
-    paths = pkgs.lib.mapAttrsToList (
-      name: value: pkgs.writeShellScriptBin "proxy-${name}" value
-    ) proxies;
   };
   sing-box = unstable.sing-box.overrideAttrs (oldAttrs: rec {
     version = "1.14.0-alpha.34";
@@ -32,20 +24,16 @@ let
   });
   slipstream = (pkgs.callPackage ./slipstream.nix { });
   paqet = (pkgs.callPackage ./paqet.nix { });
-  chproxy = pkgs.writeShellScriptBin "chproxy" ''
-    if [ -z "$1" ]; then
-      echo "Usage: chproxy <proxy-name>"
-      echo "Available proxies: ${pkgs.lib.concatStringsSep " " (pkgs.lib.attrNames proxies)}"
-      exit 1
-    fi
-    if [ ! -e "${proxiesDir}/bin/proxy-$1" ]; then
-      echo "Error: Proxy '$1' not found"
-      echo "Available proxies: ${pkgs.lib.concatStringsSep " " (pkgs.lib.attrNames proxies)}"
-      exit 1
-    fi
-    echo "$1" > /etc/current-proxy;
-    sudo systemctl restart proxy.service;
-  '';
+  chproxy = pkgs.callPackage ../utils/chproxy.nix { inherit sing-box; };
+
+  # the per-profile base config chproxy reads at /etc/chproxy/chproxy.json.
+  # Carrier outbounds are NOT here — they live in the runtime /etc/proxies.json.
+  sb = import ../utils/sing-box.nix;
+  baseConfig = sb.mkBaseConfig {
+    defaultProxy = secrets.defaultProxy;
+    wgFront = secrets.wgFront;
+    wgBypass = secrets.wg-bypass;
+  };
 in
 {
   imports = [ ];
@@ -100,6 +88,18 @@ in
   programs.throne.tunMode.setuid = false;
   programs.throne.package = unstable.throne;
 
+  # chproxy base config (per-profile: base + the single wg front). The carrier
+  # outbounds are a separate, runtime-writable file at /etc/proxies.json.
+  environment.etc."chproxy/chproxy.json".source =
+    pkgs.writeText "chproxy.json" (builtins.toJSON baseConfig);
+
+  # seed /etc/current-proxy with "default" once (writable runtime state — never
+  # an environment.etc store symlink). chproxy also treats an absent file as
+  # "default", which resolves to chproxy.json's defaults.proxy.
+  systemd.tmpfiles.rules = [
+    "f /etc/current-proxy 0644 root root - default"
+  ];
+
   environment.systemPackages = [
     slipstream
     pkgs.dig
@@ -116,6 +116,8 @@ in
     unstable.amneziawg-tools
     unstable.tor
     chproxy
+    pkgs.jq
+    pkgs.iproute2
     unstable.wireguard-tools
     pkgs.udp2raw
     pkgs.innernet
@@ -187,30 +189,21 @@ in
         pkgs.coreutils # For basic commands
       ];
     };
-    services.proxy = {
+    services.chproxy = {
       enable = true;
-      description = "main proxy for system";
+      description = "chproxy — sing-box switcher";
       after = [ "network.target" ];
       serviceConfig = {
         Restart = "always";
         # User = "novpn"; # ← runs as novpn, triggers the uid routing rule
         # Group = "novpn";
         IPMark = 520;
-        ExecStart = pkgs.writeShellScript "proxy-start" ''
-          if [ -f /etc/current-proxy ]; then
-            name=$(cat /etc/current-proxy)
-          else
-            name="${defaultProxy}"
-          fi
-          exec "${proxiesDir}/bin/proxy-$name"
-        '';
+        ExecStart = "${chproxy}/bin/chproxy -d";
       };
       path = [
-        slipstream
-        unstable.xray
         sing-box
-        paqet
-        pkgs.udp2raw
+        pkgs.jq
+        pkgs.iproute2
       ];
       wantedBy = [ "multi-user.target" ];
     };

@@ -123,20 +123,17 @@ in
                   description = "wireguard config for wg0";
                 };
 
-                # Proxy configurations
-                proxies = lib.mkOption {
-                  type = lib.types.anything;
-                  description = "Attrset of proxy shell scripts. Each value is a shell script that launches the proxy (typically xray or sing-box).";
-                  example = {
-                    some-vless = "#!/bin/sh\nxray run -c ...";
-                    name1 = "#!/bin/sh\nxray run -c ...";
-                  };
+                # Wireguard front
+                wgFront = lib.mkOption {
+                  type = lib.types.str;
+                  description = "Raw JSON string of this profile's single wireguard front endpoint — the system-wg interface that `chproxy -w` brings up. Baked into chproxy.json by mkBaseConfig.";
+                  example = ''{"type":"wireguard","tag":"wire",...}'';
                 };
 
                 defaultProxy = lib.mkOption {
                   type = lib.types.str;
-                  description = "Name of the default proxy to use (must be a key in secrets.proxies).";
-                  example = "some-vless";
+                  description = ''Name of the default proxy (a key in the runtime /etc/proxies.json) that "default" resolves to.'';
+                  example = "pro";
                 };
 
                 # AI API keys
