@@ -90,7 +90,7 @@ compose_config() {
         --argjson outbound "$outbound" \
         --argjson wg "$wg" \
         --rawfile base "$CONF" \
-        -f - <<'JQ'
+        '
 ($base | fromjson) as $B
 # ── flags ──
 | ($wg != null)                                                  as $has_front
@@ -144,7 +144,7 @@ compose_config() {
         "rules":        $rules
     }
   }
-JQ
+        '
 }
 
 # ── wg policy routing: faithful port of mkSystemWg ──────────────────────────
