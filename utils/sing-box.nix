@@ -101,7 +101,9 @@ let
 
   # sniff the first hop, then steal DNS for the resolver. chproxy injects the
   # constant inbound list ["mixed-in","tun-in"] at compose time.
-  sniff-rule = { action = "sniff"; };
+  sniff-rule = {
+    action = "sniff";
+  };
   hijack-dns-rule = {
     action = "hijack-dns";
     protocol = "dns";
@@ -161,7 +163,9 @@ in
       inherit service;
       state_file = stateFile;
       singbox_bin = singboxBin;
-      defaults = { proxy = defaultProxy; };
+      defaults = {
+        proxy = defaultProxy;
+      };
       wg_front = (read wgFront) // system-wg-struct;
 
       mixed_inbound = mixed-inbound;

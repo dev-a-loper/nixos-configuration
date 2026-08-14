@@ -40,11 +40,15 @@ in
   networking.nameservers = [ "1.1.1.1" ];
   networking.networkmanager.enable = true;
   networking.firewall.allowedTCPPorts = [
+    3080
     1080
     5900
     8443
+    8080
   ];
   networking.firewall.allowedUDPPorts = [
+    3080
+    8080
     5900
     8443
     8080
@@ -90,8 +94,9 @@ in
 
   # chproxy base config (per-profile: base + the single wg front). The carrier
   # outbounds are a separate, runtime-writable file at /etc/proxies.json.
-  environment.etc."chproxy/chproxy.json".source =
-    pkgs.writeText "chproxy.json" (builtins.toJSON baseConfig);
+  environment.etc."chproxy/chproxy.json".source = pkgs.writeText "chproxy.json" (
+    builtins.toJSON baseConfig
+  );
 
   # seed /etc/current-proxy with "default" once (writable runtime state — never
   # an environment.etc store symlink). chproxy also treats an absent file as
