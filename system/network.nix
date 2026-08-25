@@ -88,9 +88,9 @@ in
     torsocks.enable = true;
   };
   programs.throne.enable = true;
-  programs.throne.tunMode.enable = false;
-  programs.throne.tunMode.setuid = false;
-  programs.throne.package = unstable.throne;
+  # programs.throne.tunMode.enable = false;
+  # programs.throne.tunMode.setuid = false;
+  # programs.throne.package = unstable.throne;
 
   # chproxy base config (per-profile: base + the single wg front). The carrier
   # outbounds are a separate, runtime-writable file at /etc/proxies.json.
