@@ -65,6 +65,8 @@
     package = config.boot.kernelPackages.nvidiaPackages.stable;
   };
   boot.loader.grub.gfxmodeEfi = "1024x768";
+  # Registers the nvidia runtime with the Docker daemon
+  hardware.nvidia-container-toolkit.enable = true;
 
   nix.settings = {
     extra-substituters = [
