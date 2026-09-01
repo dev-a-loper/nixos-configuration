@@ -14,7 +14,7 @@ in
     package = llm-agents.claude-code;
     settings = {
       env = {
-        ANTHROPIC_DEFAULT_HAIKU_MODEL = "glm-5.3";
+        ANTHROPIC_DEFAULT_HAIKU_MODEL = "glm-5.3-flash";
         ANTHROPIC_DEFAULT_SONNET_MODEL = "glm-5.3";
         ANTHROPIC_DEFAULT_OPUS_MODEL = "glm-5.3";
         AGENT_BROWSER_HEADED = "true";
