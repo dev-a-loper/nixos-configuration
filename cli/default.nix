@@ -70,6 +70,7 @@ in
       (pkgs.writeShellScriptBin "claude-code-acp" "${llm-agents.claude-agent-acp}/bin/claude-agent-acp")
       llm-agents.claude-plugins
       llm-agents.skills-installer
+      p7zip
 
       # Netowrk
       wget
