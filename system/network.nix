@@ -11,17 +11,7 @@ let
     text = secrets.awg-config;
     destination = "/awg.conf";
   };
-  sing-box = unstable.sing-box.overrideAttrs (oldAttrs: rec {
-    version = "1.14.0-alpha.34";
-    src = unstable.fetchFromGitHub {
-      owner = "SagerNet";
-      repo = "sing-box";
-      tag = "v${version}";
-      hash = "sha256-QwG46iZtc5jqWar/28/K9STZHWnLUwofHBlR2mE5lYs=";
-    };
-    vendorHash = "sha256-c99as3LIzPR/IZel76rEOJ/kHmxE0fwJV84eSPG98Ls=";
-    tags = oldAttrs.tags ++ [ "with_cloudflared" ];
-  });
+  sing-box = unstable.sing-box;
   slipstream = (pkgs.callPackage ./slipstream.nix { });
   paqet = (pkgs.callPackage ./paqet.nix { });
   chproxy = pkgs.callPackage ../utils/chproxy.nix { inherit sing-box; };
