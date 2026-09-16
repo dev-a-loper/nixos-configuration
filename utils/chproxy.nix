@@ -14,6 +14,7 @@
   sing-box,
   jq,
   iproute2,
+  openresolv,
 }:
 writeShellApplication {
   name = "chproxy";
@@ -28,6 +29,7 @@ writeShellApplication {
     sing-box
     jq
     iproute2
+    openresolv # resolvconf — DNS leak pin while the wg front is up
   ];
   text = builtins.readFile ./chproxy/chproxy;
 }

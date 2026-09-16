@@ -158,6 +158,13 @@ in
       table ? 123,
       fwmark ? 520,
       interface ? "www",
+      # nameservers chproxy pins /etc/resolv.conf to (exclusively, via
+      # resolvconf) while the wg front is up — must be public IPs so they ride
+      # the policy-routed tunnel instead of leaking out the main table.
+      dns ? [
+        "1.1.1.1"
+        "1.0.0.1"
+      ],
     }:
     {
       inherit service;
@@ -186,7 +193,7 @@ in
       private_bypass = private-bypass;
 
       wg = {
-        inherit table fwmark interface;
+        inherit table fwmark interface dns;
         wg_bypass = wgBypass;
       };
     };

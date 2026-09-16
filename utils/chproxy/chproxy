@@ -13,6 +13,8 @@
 #   chproxy -h / --help
 #
 # The name "default" resolves to chproxy.json's defaults.proxy.
+# While the wg front (-w) is up, /etc/resolv.conf is pinned exclusively to
+# .wg.dns (default Cloudflare) via resolvconf to prevent DNS leaks.
 set -uo pipefail
 
 # ── paths (env-overridable, e.g. for testing) ──────────────────────────────
@@ -51,6 +53,7 @@ IFACE="www"
 TABLE=""
 FWMARK=""
 BYPASS_CIDRS=()
+DNS_PINNED=0
 
 # ── arg parsing (manual: no optional-argument flags anymore) ───────────────
 NAME=""
@@ -184,11 +187,32 @@ setup_wg_routing() {
     ip rule add fwmark "$FWMARK" lookup main priority 900 2>/dev/null || true
     ip rule add lookup "$TABLE" priority 2000 2>/dev/null || true
     WG_ROUTING=1
+
+    # ── DNS leak prevention ──
+    # The host's /etc/resolv.conf still carries whatever DHCP/NetworkManager
+    # registered (usually LAN/ISP resolvers), and those destinations sit in
+    # private_bypass → queries would leave in plaintext outside the tunnel.
+    # Register tunnel-routed resolvers EXCLUSIVELY (-x) for $IFACE so the
+    # system resolves only through them (public IPs ride the policy table).
+    # TUN mode needs no pin: its hijack-dns rule steals all port-53 traffic.
+    local -a dns_servers
+    mapfile -t dns_servers < <(jq -r '.wg.dns // ["1.1.1.1", "1.0.0.1"] | .[]' "$CONF")
+    if [ "${#dns_servers[@]}" -eq 0 ]; then
+        echo "chproxy: warning: .wg.dns is empty; DNS may leak" >&2
+    elif command -v resolvconf >/dev/null 2>&1; then
+        printf 'nameserver %s\n' "${dns_servers[@]}" | resolvconf -x -a "$IFACE" \
+            && DNS_PINNED=1 \
+            || echo "chproxy: warning: resolvconf -a $IFACE failed; DNS may leak" >&2
+    else
+        echo "chproxy: warning: resolvconf not found; DNS may leak" >&2
+    fi
 }
 
 cleanup() {
     trap - EXIT INT TERM
     if [ "$WG_ROUTING" = 1 ]; then
+        # restore normal resolver ordering before the tunnel goes away
+        [ "$DNS_PINNED" = 1 ] && resolvconf -d "$IFACE" 2>/dev/null || true
         ip route del default dev "$IFACE" table "$TABLE" 2>/dev/null || true
         local cidr
         for cidr in "${BYPASS_CIDRS[@]}"; do

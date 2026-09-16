@@ -199,6 +199,7 @@ in
         sing-box
         pkgs.jq
         pkgs.iproute2
+        pkgs.openresolv # resolvconf — DNS leak pin while the wg front is up
       ];
       wantedBy = [ "multi-user.target" ];
     };
