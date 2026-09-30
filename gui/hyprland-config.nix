@@ -26,6 +26,7 @@ in
     # Will be configured automatically or via hardware-configuration
     monitor = HDMI-A-1,preferred,auto,2.5
     monitor = DP-5,preferred,auto,2.5
+    monitor = DP-6,preferred,auto,2.5
     monitor = eDP-1,preferred,auto,1.5
 
 

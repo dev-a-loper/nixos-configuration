@@ -71,6 +71,7 @@ in
       llm-agents.claude-plugins
       llm-agents.skills-installer
       p7zip
+      nmap
 
       # Netowrk
       wget
