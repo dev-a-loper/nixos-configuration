@@ -1,7 +1,6 @@
 {
   pkgs,
   config,
-  hyprgrass,
   ...
 }:
 let
@@ -326,77 +325,10 @@ in
         use_nearest_neighbor = false
     }
 
-
-    exec-once = hyprctl plugin load ${hyprgrass}/lib/libhyprgrass.so 
-
     # windowrulev2=move 0 0,class:(flameshot),title:(flameshot)
     # windowrulev2=pin,class:(flameshot),title:(flameshot)
     # windowrulev2=fullscreenstate,class:(flameshot),title:(flameshot)
     # windowrulev2=float,class:(flameshot),title:(flameshot)
-    plugin {
-        
-
-     touch_gestures {
-      # The default sensitivity is probably too low on tablet screens,
-      # I recommend turning it up to 4.0
-      sensitivity = 4.0
-
-      # must be >= 3
-      workspace_swipe_fingers = 3
-
-      # switching workspaces by swiping from an edge, this is separate from workspace_swipe_fingers
-      # and can be used at the same time
-      # possible values: l, r, u, or d
-      # to disable it set it to anything else
-      workspace_swipe_edge = d
-
-      # in milliseconds
-      long_press_delay = 400
-
-      # resize windows by long-pressing on window borders and gaps.
-      # If general:resize_on_border is enabled, general:extend_border_grab_area is
-      # used for floating windows
-      resize_on_border_long_press = true
-
-      # in pixels, the distance from the edge that is considered an edge
-      edge_margin = 10
-
-      # emulates touchpad swipes when swiping in a direction that does not trigger
-      # workspace swipe. ONLY triggers when finger count is equal to 
-      # workspace_swipe_fingers.
-      #
-      # might be removed in the future in favor of event hooks
-      emulate_touchpad_swipe = false
-
-
-      # swipe left from right edge
-      hyprgrass-bind = , edge:r:l, workspace, +1
-
-      # swipe up from bottom edge
-      hyprgrass-bind = , edge:d:u, exec, firefox
-
-      # swipe down from left edge
-      hyprgrass-bind = , edge:l:d, exec, pactl set-sink-volume @DEFAULT_SINK@ -4%
-
-      # swipe down with 4 fingers
-      hyprgrass-bind = , swipe:4:d, killactive
-
-      # swipe diagonally left and down with 3 fingers
-      # l (or r) must come before d and u
-      hyprgrass-bind = , swipe:3:ld, exec, foot
-
-      # tap with 3 fingers
-      hyprgrass-bind = , tap:3, exec, alacritty
-
-      # pinch in with 3 fingers
-      hyprgrass-bind = , pinch:3:i, exec, alacritty
-
-      # longpress can trigger mouse binds:
-      hyprgrass-bindm = , longpress:2, movewindow
-      hyprgrass-bindm = , longpress:3, resizewindow
-    }
-
-    }
 
      workspace = w[tv1]s[false], gapsout:0, gapsin:0, bordersize:0, rounding:0
      workspace = s[true], gapsout:80 20 20 80, gapsin:10, bordersize:2, rounding:10,active_opacity:0.9, inactive_opacity:0.4

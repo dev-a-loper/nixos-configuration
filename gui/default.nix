@@ -7,28 +7,6 @@
 }:
 let
   userName = config.userConfiguration.name;
-  patchedPkgs =
-    import
-      (builtins.fetchTree {
-        type = "github";
-        owner = "JonnieCache";
-        repo = "nixpkgs";
-        rev = "231ea250eee538df1b939ca7899e0e80e7bcb08c";
-      })
-      {
-        inherit (unstable) system;
-        config.allowUnfree = true;
-      };
-
-  fixedHyprgrass = patchedPkgs.hyprlandPlugins.hyprgrass.overrideAttrs (old: {
-    version = "0.8.2-unstable-2025-04-14";
-    src = unstable.fetchFromGitHub {
-      owner = "horriblename";
-      repo = "hyprgrass";
-      rev = "cd4810130e2e8fd8a0f7be4b69b42b9c902ad00a";
-      hash = "sha256-PJ9w8WTTxI/lJVgCFsNRYodG4Ab3H4EOgjSq1dHli+A=";
-    };
-  });
 
 in
 {
@@ -162,7 +140,6 @@ in
       (import ./hyprland-config.nix {
         pkgs = pkgs;
         config = config;
-        hyprgrass = fixedHyprgrass;
       }).text;
     home.file.".config/hypr/hyprpaper.conf".text = ''
       preload = ~/.background-image
@@ -212,8 +189,6 @@ in
     unstable.telegram-desktop
     # Hyprland packages
     hyprland
-    fixedHyprgrass
-    unstable.hyprlandPlugins.hyprbars
 
     hyprpaper
     # Common Wayland packages
