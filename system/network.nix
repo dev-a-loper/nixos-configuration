@@ -47,6 +47,7 @@ in
   networking.nftables.enable = true;
   networking.firewall.backend = "nftables";
   services.vnstat.enable = true;
+  services.tailscale.enable = true;
   services.openvpn.servers = {
     openvpn = {
       autoStart = false;
