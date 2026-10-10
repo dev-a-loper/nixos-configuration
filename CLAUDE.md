@@ -127,8 +127,8 @@ Required keys:
 | Key | Purpose |
 |-----|---------|
 | `HASHED_PASSWORD` | User password hash |
-| `wgFront` | Raw JSON of this profile's single wireguard front (the system-wg interface `chproxy -w` brings up) |
-| `defaultProxy` | Default proxy name (a key in the runtime `/etc/proxies.json`); `"default"` resolves to this |
+| `wgFront` | Raw JSON of this profile's wireguard front (the system-wg interface `chproxy wg on` policy-routes; baked into `/etc/chproxy/main.json`) |
+| `defaultProxy` | Default carrier name (a key in the runtime `/etc/proxies.json`); fallback when nothing is selected |
 | `OPENAI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | AI API keys |
 | `OPENAI_API_HOST` | API host override |
 | `location` | `{latitude, longitude}` for praytimes/redshift |
@@ -155,14 +155,25 @@ Hardware config goes in `vars/hardware-configuration.nix`.
 - Proxy always available on `localhost:1080` (socks5)
 - VPN options: ExpressVPN, OpenVPN, AmneziaVPN (awg), Tor
 - `slipstream` package provides covert DNS channel
-- `chproxy` (standalone bash, `utils/chproxy/chproxy`) switches the active proxy
-  and restarts `chproxy.service`. `chproxy <name> [-t] [-w]` — `-t` enables the
-  TUN inbound, `-w` enables the profile's wireguard front (policy-routed `www`).
-  `chproxy -d` is the daemon (what the unit runs).
-- Carrier outbounds live in the **runtime** `/etc/proxies.json` (edit directly,
-  no rebuild); the per-profile base config + wg front are Nix-rendered to
-  `/etc/chproxy/chproxy.json`. Active selection is in `/etc/current-proxy`.
-- Configured in `system/network.nix`
+- `chproxy` (plain bash + jq, packaged at `utils/chproxy/` and exposed as the
+  standalone flake package `.#chproxy`) drives sing-box from **templates +
+  carriers**: each `/etc/chproxy/<name>.json` is a complete sing-box config
+  plus a reserved `x-chproxy` {tun,wg} routing section (stripped before
+  sing-box sees it); the selected carrier from `/etc/proxies.json` replaces
+  whatever the template tags `proxy` (wireguard-type carriers land in
+  `endpoints` instead). One template is active at a time, tracked in
+  `/etc/chproxy/state.json` `{template, proxy, tun, wg}`.
+- CLI: `chproxy use <proxy>` / `use <template> <proxy>` / `use -t <template>
+  [<proxy>]` (restart the service), `chproxy tun on|off` / `wg on|off`
+  (policy routing only — applied live, no restart; mutually exclusive),
+  plus `list`, `status`, `daemon`, `compose` (debug dry-run). `chproxy <name>`
+  is a legacy alias for `use <name>`.
+- Nix renders `/etc/chproxy/main.json` (mixed + tun inbounds + this profile's
+  wg front — `wg on` policy-routes `www`, `tun on` policy-routes `throne-tun`)
+  and `/etc/chproxy/settings.json`; further templates can be dropped into
+  `/etc/chproxy` at runtime. Carrier outbounds live in the **runtime**
+  `/etc/proxies.json` (edit directly, no rebuild).
+- Configured in `system/network.nix`; renderer in `utils/sing-box.nix`
 
 ## Claude Code Integration
 
@@ -182,7 +193,7 @@ Modular Neovim config in `programming/nixvim/`:
 ## Custom Shell Applications
 
 Many utilities use `writeShellApplication`:
-- `utils/chproxy.nix` - The sing-box proxy switcher (`utils/chproxy/chproxy`); CLI + daemon
+- `utils/chproxy/default.nix` - The sing-box proxy switcher (`utils/chproxy/chproxy`); CLI + daemon + standalone flake package (`.#chproxy`)
 - `gui/notitrans-fa.nix` - Translate selected text to Persian
 - `gui/notitrans-en.nix` - Translate selected text to English
 - `gui/notitrans-dict.nix` - Dictionary lookup

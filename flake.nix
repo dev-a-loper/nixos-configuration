@@ -110,6 +110,11 @@
     in
     {
       packages."x86_64-linux".nvim = nvim;
+      # chproxy, standalone-installable (nix run github:<repo>#chproxy) — the
+      # derivation reads only utils/chproxy/, never the gitignored vars/*, so
+      # it evaluates from a clean clone. Keep it that way: anything strict at
+      # the top of outputs that reads vars/ would break this.
+      packages."x86_64-linux".chproxy = inputs.unstable.legacyPackages.${system}.callPackage ./utils/chproxy { };
       packages."x86_64-linux".iso = self.nixosConfigurations.iso.config.system.build.isoImage;
       packages."x86_64-linux".usb = self.nixosConfigurations.usb.config.system.build.sdImage;
       nixosConfigurations = builtins.mapAttrs (_: nixpkgs.lib.nixosSystem) {

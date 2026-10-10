@@ -1,356 +1,625 @@
-# chproxy — sing-box switcher (plain bash + jq).
+# chproxy — sing-box switcher: templates + carriers, tunneling decoupled
+# (plain bash + jq).
 #
-# State:
-#   /etc/current-proxy        one line: "<name> [-t] [-w]"; seeded to "default"
-#   /etc/proxies.json         all carrier outbounds (runtime, user-maintained)
-#   /etc/chproxy/chproxy.json base config + the single wg front (Nix-rendered)
+# Layout:
+#   /etc/chproxy/<name>.json   templates — COMPLETE sing-box configs plus one
+#                              reserved top-level key that chproxy strips
+#                              before sing-box sees the config:
+#                                "x-chproxy": {
+#                                  "tun": {"interface":…, "table":…, "fwmark":…,
+#                                          "dns":[…], "bypass":[…]},
+#                                  "wg":  { …same shape… }
+#                                }
+#                              Both sections are optional: a template without
+#                              one simply can't have that tunnel turned on.
+#                              Reserved template names: state, settings, chproxy.
+#   /etc/chproxy/settings.json globals: service, singbox_bin, proxies_file,
+#                              defaults.{template,proxy}.
+#   /etc/chproxy/state.json    {"template":…, "proxy":…, "tun":bool, "wg":bool}
+#                              (absent → migrated from the legacy one-line
+#                              /etc/current-proxy, else settings defaults)
+#   /etc/proxies.json          carrier outbounds (runtime, user-maintained).
 #
-# Modes:
-#   chproxy <name> [-t] [-w]  switch + restart the service
-#   chproxy -d                daemon (what the systemd unit runs)
-#   chproxy -l / --list       list carriers + the wg front
-#   chproxy -s / --status     show current selection
-#   chproxy -h / --help
+# Carriers: the selected carrier replaces whatever the ACTIVE template tags
+# "proxy" (outbound or endpoint — e.g. the rendered {"type":"direct"}
+# placeholder). A wireguard-type carrier is injected into `endpoints` instead
+# of `outbounds` (sing-box ≥1.12). A template whose endpoint detours "proxy"
+# (a front riding the carrier) therefore cannot host a wireguard carrier.
 #
-# The name "default" resolves to chproxy.json's defaults.proxy.
-# While the wg front (-w) is up, /etc/resolv.conf is pinned exclusively to
-# .wg.dns (default Cloudflare) via resolvconf to prevent DNS leaks.
+# Tunnels: `chproxy tun on` / `chproxy wg on` install POLICY ROUTING ONLY —
+# default route via the interface the active template already provides, into
+# that section's table: `to <carrier-ip>/32 + bypass lookup main` @900,
+# `fwmark <fwmark> lookup main` @900, `lookup <table>` @2000, and an
+# exclusive resolvconf pin of the section's dns list (DNS-leak prevention).
+# `off` reverses exactly that. Tunnels are mutually exclusive; the daemon
+# re-applies them per state on every start. `chproxy use …` restarts the
+# service (and thus the tunnels); toggles apply live when possible.
+#
+# fwmark conventions: fwmark (520 by default) is the sing-box INSTANCE
+# identity — the template renders it as route.default_mark, sing-box marks its
+# own dials, and the @900 fwmark rule lets them escape the policy table (the
+# anti-recursion that also covers domain-server carriers whose IP can't be
+# bypass-listed; the old unit's IPMark= never worked, systemd ignores it).
+# 521 belongs to the independent tailscale sing-box (james) → table 123 @1000;
+# never reuse 520/521 for anything else.
 set -uo pipefail
 
 # ── paths (env-overridable, e.g. for testing) ──────────────────────────────
-: "${CHPROXY_CONF:=/etc/chproxy/chproxy.json}"
+: "${CHPROXY_DIR:=/etc/chproxy}"
+: "${CHPROXY_SETTINGS:=$CHPROXY_DIR/settings.json}"
+: "${CHPROXY_STATE:=$CHPROXY_DIR/state.json}"
 : "${CHPROXY_PROXIES:=/etc/proxies.json}"
-: "${CHPROXY_STATE:=/etc/current-proxy}"
-CONF="$CHPROXY_CONF"
-PROXIES="$CHPROXY_PROXIES"
-STATE="$CHPROXY_STATE"
+: "${CHPROXY_LEGACY_STATE:=/etc/current-proxy}"
 
 die() { echo "chproxy: $*" >&2; exit 1; }
+warn() { echo "chproxy: warning: $*" >&2; }
 
-usage() {
-    cat <<'EOF'
-Usage:
-  chproxy <name> [-t] [-w]   switch active proxy and restart the service
-  chproxy -d                 run as the daemon (reads /etc/current-proxy)
-  chproxy -l, --list         list available carriers and the wg front
-  chproxy -s, --status       show the current selection
-  chproxy -h, --help         this help
+# crude "looks like an IPv4 literal" test — anything else (a domain, empty)
+# can't be used for a `to <ip>/32` bypass rule
+is_ip() { case "$1" in ""|*[!0-9.]*) return 1 ;; *) return 0 ;; esac; }
 
-Switch flags:
-  -t        also enable the TUN inbound (transparent capture)
-  -w        also enable this profile's wireguard front (policy-routed www)
+# ── settings + state (loaded once at dispatch) ─────────────────────────────
+SVC="chproxy"
+SB_BIN="sing-box"
+PROXIES="$CHPROXY_PROXIES"
+DEF_TEMPLATE="main"
+DEF_PROXY=""
+STATE_JSON=""
 
-State is stored on one line of /etc/current-proxy as "<name> [-t] [-w]".
-The name "default" resolves to chproxy.json's defaults.proxy.
-EOF
+settings_load() {
+    [ -f "$CHPROXY_SETTINGS" ] || return 0
+    local row
+    row="$(jq -r '
+        [ .service          // "chproxy"
+        , .singbox_bin      // "sing-box"
+        , .proxies_file     // ""
+        , .defaults.template // "main"
+        , .defaults.proxy   // ""
+        ] | @tsv' "$CHPROXY_SETTINGS" 2>/dev/null)" || return 0
+    IFS=$'\t' read -r SVC SB_BIN PROXIES_FILE DEF_TEMPLATE DEF_PROXY <<< "$row"
+    [ -n "$PROXIES_FILE" ] && PROXIES="$PROXIES_FILE"
+    return 0
 }
 
-# ── globals shared between the daemon and its cleanup trap ─────────────────
+# Normalized state as JSON on stdout: {template, proxy, tun, wg}. Missing
+# state falls back to the legacy one-liner, then to settings defaults.
+state_read() {
+    if [ -f "$CHPROXY_STATE" ] && jq -e . "$CHPROXY_STATE" >/dev/null 2>&1; then
+        jq '{ template: (.template // null)
+            , proxy:    (.proxy    // null)
+            , tun:      (.tun      // false)
+            , wg:       (.wg       // false) }' "$CHPROXY_STATE"
+        return 0
+    fi
+    local name="" tun=false wg=false
+    if [ -f "$CHPROXY_LEGACY_STATE" ]; then
+        local -a toks
+        read -r -a toks <<< "$(cat "$CHPROXY_LEGACY_STATE")"
+        name="${toks[0]:-}"
+        local tok
+        for tok in "${toks[@]:1}"; do
+            case "$tok" in
+                -t) tun=true ;;
+                -w) wg=true ;;
+            esac
+        done
+        if $tun && $wg; then
+            warn "legacy state had both -t and -w; keeping wg only"
+            tun=false
+        fi
+        [ "$name" = "default" ] && name="$DEF_PROXY"
+    else
+        name="$DEF_PROXY"
+    fi
+    jq -n --arg t "$DEF_TEMPLATE" --arg p "$name" \
+          --argjson tun "$tun" --argjson wg "$wg" \
+        '{ template: $t
+         , proxy: (if $p == "" then null else $p end)
+         , tun: $tun, wg: $wg }'
+}
+
+state_write() {  # <state-json> — takes the JSON as an argument so a failed
+                 # write can actually abort the caller (a die inside a stdin
+                 # pipeline would only exit the subshell)
+    printf '%s\n' "$1" | as_root tee "$CHPROXY_STATE" >/dev/null \
+        || die "failed to write $CHPROXY_STATE"
+}
+
+sget() { jq -r --arg k "$1" '.[$k]' <<< "$STATE_JSON"; }
+cur_proxy() {
+    local p
+    p="$(sget proxy)"
+    [ "$p" = "null" ] && printf '' || printf '%s' "$p"
+}
+
+# ── templates ───────────────────────────────────────────────────────────────
+RESERVED=" state settings chproxy "
+
+normalize_template() {  # accepts "main" or "main.json"; fails on bad names
+    local name="${1%.json}"
+    case "$name" in
+        ""|.*|*/) return 1 ;;
+    esac
+    case "$RESERVED" in
+        *" $name "*) return 1 ;;
+    esac
+    printf '%s' "$name"
+}
+
+template_path() { printf '%s/%s.json' "$CHPROXY_DIR" "$1"; }
+
+list_templates() {
+    local f base
+    for f in "$CHPROXY_DIR"/*.json; do
+        [ -f "$f" ] || continue
+        base="$(basename "$f" .json)"
+        case "$RESERVED" in
+            *" $base "*) continue ;;
+        esac
+        printf '%s\n' "$base"
+    done | sort
+}
+
+# x-chproxy accessors — all take <template-file> <kind(tun|wg)>
+has_tunnel_section() {
+    jq -e --arg k "$2" 'has("x-chproxy") and (.["x-chproxy"] | has($k))' \
+        "$1" >/dev/null 2>&1
+}
+tunnel_meta()   { jq -r --arg k "$2" --arg f "$3" '.["x-chproxy"][$k][$f] // empty' "$1"; }
+tunnel_bypass() { jq -r --arg k "$2" '.["x-chproxy"][$k].bypass[]? // empty' "$1"; }
+tunnel_dns()    { jq -r --arg k "$2" '.["x-chproxy"][$k].dns[]? // empty' "$1"; }
+
+# does the template have an endpoint (front) riding the carrier?
+template_has_front() {
+    jq -e 'any(.endpoints[]?; .detour == "proxy")' "$1" >/dev/null 2>&1
+}
+
+# ── carriers ────────────────────────────────────────────────────────────────
+carrier_get()  { jq --arg n "$1" '.[$n] // null' "$PROXIES"; }
+carrier_type() { jq -r --arg n "$1" '.[$n].type // empty' "$PROXIES"; }
+carrier_ip()   {  # wireguard carriers keep the peer address, not .server
+    jq -r --arg n "$1" '.[$n].server // .[$n].peers[0].address // empty' "$PROXIES"
+}
+
+# ── config composition ──────────────────────────────────────────────────────
+# compose <template-file> <carrier-json-or-null> → full sing-box config on
+# stdout (x-chproxy stripped, carrier injected at tag "proxy").
+compose_config() {
+    jq -en --argjson carrier "$2" --rawfile tpl "$1" '
+    ($tpl | fromjson) as $t
+    | ($t | del(."x-chproxy")) as $c
+    | if $carrier == null then $c
+      elif $carrier.type == "wireguard" then
+        # wireguard must be an endpoint (≥1.12); drop any proxy-tagged
+        # outbound too so the tag stays unique
+        $c
+        | .outbounds = ((.outbounds // []) | map(select(.tag != "proxy")))
+        | .endpoints = (((.endpoints // []) | map(select(.tag != "proxy")))
+                        + [$carrier + {tag: "proxy"}])
+      else
+        $c
+        | .endpoints = ((.endpoints // []) | map(select(.tag != "proxy")))
+        | .outbounds = ((.outbounds // [])
+            | if any(.[]; .tag == "proxy")
+              then map(if .tag == "proxy" then $carrier + {tag: "proxy"} else . end)
+              else . + [$carrier + {tag: "proxy"}] end)
+      end
+    '
+}
+
+# ── privileges ──────────────────────────────────────────────────────────────
+# sudo/systemctl deliberately come from the system PATH (setuid wrapper), so
+# they are not in the package's runtimeInputs.
+as_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+# ── tunnel plumbing (policy routing only — sing-box owns the interfaces) ────
+# globals shared between the daemon and its cleanup trap: exactly what was
+# installed, so the trap can reverse it even if state changed meanwhile.
 SB_PID=""
 TMP=""
-WG_ROUTING=0
-IFACE="www"
-TABLE=""
-FWMARK=""
-BYPASS_CIDRS=()
-DNS_PINNED=0
+TUN_UP=0 WG_UP=0
+TUN_TABLE="" TUN_FWMARK="" TUN_IFACE="" TUN_CIDRS=()
+WG_TABLE=""  WG_FWMARK=""  WG_IFACE=""  WG_CIDRS=()
 
-# ── arg parsing (manual: no optional-argument flags anymore) ───────────────
-NAME=""
-TUN=false
-WG_FLAG=false
-MODE="switch"
+# tunnel_apply <kind> <wait:0|1> <carrier-name-or-empty>
+tunnel_apply() {
+    local kind="$1" wait="$2" carrier_name="$3"
+    local tname
+    tname="$(sget template)"
+    local tfile
+    tfile="$(template_path "$tname")"
+    has_tunnel_section "$tfile" "$kind" \
+        || die "template '$tname' has no x-chproxy.$kind section"
+    local table fwmark iface
+    table="$(tunnel_meta "$tfile" "$kind" table)"
+    fwmark="$(tunnel_meta "$tfile" "$kind" fwmark)"
+    iface="$(tunnel_meta "$tfile" "$kind" interface)"
 
-while [ $# -gt 0 ]; do
-    case "$1" in
-        -d)          MODE=daemon;  shift ;;
-        -l|--list)   MODE=list;    shift ;;
-        -s|--status) MODE=status;  shift ;;
-        -h|--help)   usage; exit 0 ;;
-        -t)          TUN=true;     shift ;;
-        -w)          WG_FLAG=true; shift ;;
-        --)
-            shift
-            while [ $# -gt 0 ]; do
-                if [ -z "$NAME" ]; then NAME="$1"; else die "unexpected argument: $1"; fi
-                shift
-            done
-            ;;
-        -*) die "unknown option: $1" ;;
-        *)
-            if [ -z "$NAME" ]; then NAME="$1"; else die "unexpected argument: $1"; fi
-            shift
-            ;;
-    esac
-done
+    if [ "$wait" = 1 ]; then
+        # daemon path: wait for sing-box to bring the interface up
+        local i=0
+        while ! ip link show "$iface" >/dev/null 2>&1; do
+            if ! kill -0 "$SB_PID" 2>/dev/null; then
+                echo "chproxy: sing-box exited before $iface came up" >&2
+                exit 1
+            fi
+            i=$((i + 1))
+            if [ "$i" -gt 150 ]; then
+                echo "chproxy: timed out waiting for $iface" >&2
+                kill "$SB_PID" 2>/dev/null || true
+                exit 1
+            fi
+            sleep 0.2
+        done
+    else
+        ip link show "$iface" >/dev/null 2>&1 \
+            || die "interface $iface does not exist — is $SVC running the active template?"
+    fi
 
-# ── compose a full sing-box config: port of create-config ──────────────────
-# args: <tun:bool> <outbound-json> <wg-json-or-null>
-compose_config() {
-    local tun="$1" outbound="$2" wg="$3"
-    jq -n \
-        --argjson tun "$tun" \
-        --argjson outbound "$outbound" \
-        --argjson wg "$wg" \
-        --rawfile base "$CONF" \
-        '
-($base | fromjson) as $B
-# ── flags ──
-| ($wg != null)                                                  as $has_front
-| ($outbound != null and ($outbound.type // "") == "wireguard")  as $is_wg_ob   # swfast
-# ── final / proxy tag ──
-| (if $has_front then ($wg.tag       // "wire")
-                 else ($outbound.tag // "proxy") end)                         as $final_tag
-# ── dns profile: the wg branch flips 4 knobs at once ──
-| (if $has_front
-   then { direct_dns: false, dns_remote_type: "udp", find_process: false, ddr: "dns-remote" }
-   else { direct_dns: true,  dns_remote_type: "tls", find_process: true,  ddr: null }
-   end)                                                                       as $dp
-| (if $dp.ddr != null then $dp.ddr
-   elif $dp.direct_dns  then "dns-direct"
-   else                       "dns-local" end)                                as $resolver
-# ── outbounds: carrier stays when a front rides it; a wg-type outbound
-#    (swfast) is NOT placed here — it becomes an endpoint below. ──
-| ( if     $has_front  then [ $outbound, {"type":"direct","tag":"direct"} ]
-    elif   $is_wg_ob   then [ {"type":"direct","tag":"direct"} ]
-    else                 [ $outbound, {"type":"direct","tag":"direct"} ]
-    end)                                                                      as $outbounds
-# ── endpoints: front, or swfast-as-direct-exit, or none ──
-| ( if     $has_front  then [ $wg ]
-    elif   $is_wg_ob   then [ $outbound ]
-    else                 []
-    end)                                                                      as $endpoints
-# ── dns servers: remote rides final; direct only when direct_dns ──
-| ( [ ($B.dns.remote_template + { detour: $final_tag, type: $dp.dns_remote_type }) ]
-    + (if $dp.direct_dns then [ $B.dns.direct ] else [] end)
-    + [ $B.dns.local ] )                                                      as $dns_servers
-# ── inbounds: front → :3080, else :1080; +tun ──
-| ( [ (if $has_front then $B.system_wg_mixed_inbound else $B.mixed_inbound end) ]
-    + (if $tun then [ $B.tun_inbound ] else [] end) )                         as $inbounds
-# ── route rules: sniff (const inbound list) + tun-only private rule + hijack ──
-| ( [ ($B.sniff_rule + { inbound: ["mixed-in", "tun-in"] }) ]
-    + (if $tun then [ $B.direct_private_rule ] else [] end)
-    + [ $B.hijack_dns_rule ] )                                                as $rules
-| {
-    "certificate": { "store": "system" },
-    "dns":          { "rules": $B.dns.localhost_rules, "servers": $dns_servers },
-    "endpoints":    $endpoints,
-    "experimental": $B.experimental,
-    "outbounds":    $outbounds,
-    "inbounds":     $inbounds,
-    "log":          { "level": "info" },
-    "route": {
-        "default_domain_resolver": { "server": $resolver, "strategy": "" },
-        "final":        $final_tag,
-        "find_process": $dp.find_process,
-        "rule_set":     [],
-        "rules":        $rules
-    }
-  }
-        '
-}
-
-# ── wg policy routing: faithful port of mkSystemWg ──────────────────────────
-# Installs a default route via the wg interface into a policy table, keeps the
-# carrier server + bypass CIDRs + RFC1918/loopback on the main table, and adds
-# a fwmark rule so sing-box's own packets don't recurse into the tunnel.
-setup_wg_routing() {
-    local carrier_ip="$1"
-    TABLE="$(jq -r '.wg.table' "$CONF")"
-    FWMARK="$(jq -r '.wg.fwmark' "$CONF")"
-    IFACE="$(jq -r '.wg.interface' "$CONF")"
-    mapfile -t BYPASS_CIDRS < <(jq -r '[.wg.wg_bypass[]?, .private_bypass[]?][]' "$CONF")
-    # carrier must stay on the main table or its own traffic loops into the tunnel
-    BYPASS_CIDRS=("$carrier_ip/32" "${BYPASS_CIDRS[@]}")
-
-    # wait for sing-box to bring the interface up (same guard as the old nix)
-    local i=0
-    while ! ip link show "$IFACE" >/dev/null 2>&1; do
-        if ! kill -0 "$SB_PID" 2>/dev/null; then
-            echo "chproxy: sing-box exited before $IFACE came up" >&2
-            exit 1
+    # carrier IP must stay on the main table or its own traffic loops into
+    # the tunnel; domain-server carriers have none — the fwmark escape
+    # covers them.
+    local -a cidrs=()
+    if [ -n "$carrier_name" ]; then
+        local cip
+        cip="$(carrier_ip "$carrier_name")"
+        if is_ip "$cip"; then
+            cidrs+=("$cip/32")
+        else
+            warn "carrier '$carrier_name' has no IP server; relying on the fwmark escape"
         fi
-        i=$((i + 1))
-        if [ "$i" -gt 150 ]; then
-            echo "chproxy: timed out waiting for $IFACE" >&2
-            kill "$SB_PID" 2>/dev/null || true
-            exit 1
-        fi
-        sleep 0.2
-    done
+    fi
+    mapfile -t -O "${#cidrs[@]}" cidrs < <(tunnel_bypass "$tfile" "$kind")
 
-    ip route replace default dev "$IFACE" table "$TABLE"
+    as_root ip route replace default dev "$iface" table "$table"
     local cidr
-    for cidr in "${BYPASS_CIDRS[@]}"; do
-        ip rule add to "$cidr" lookup main priority 900 2>/dev/null || true
+    for cidr in "${cidrs[@]}"; do
+        as_root ip rule add to "$cidr" lookup main priority 900 2>/dev/null || true
     done
-    ip rule add fwmark "$FWMARK" lookup main priority 900 2>/dev/null || true
-    ip rule add lookup "$TABLE" priority 2000 2>/dev/null || true
-    WG_ROUTING=1
+    as_root ip rule add fwmark "$fwmark" lookup main priority 900 2>/dev/null || true
+    as_root ip rule add lookup "$table" priority 2000 2>/dev/null || true
+
+    case "$kind" in
+        tun) TUN_UP=1; TUN_TABLE=$table; TUN_FWMARK=$fwmark; TUN_IFACE=$iface; TUN_CIDRS=("${cidrs[@]}") ;;
+        wg)  WG_UP=1;  WG_TABLE=$table;  WG_FWMARK=$fwmark;  WG_IFACE=$iface;  WG_CIDRS=("${cidrs[@]}")  ;;
+    esac
 
     # ── DNS leak prevention ──
     # The host's /etc/resolv.conf still carries whatever DHCP/NetworkManager
     # registered (usually LAN/ISP resolvers), and those destinations sit in
-    # private_bypass → queries would leave in plaintext outside the tunnel.
-    # Register tunnel-routed resolvers EXCLUSIVELY (-x) for $IFACE so the
-    # system resolves only through them (public IPs ride the policy table).
-    # TUN mode needs no pin: its hijack-dns rule steals all port-53 traffic.
-    local -a dns_servers
-    mapfile -t dns_servers < <(jq -r '.wg.dns // ["1.1.1.1", "1.0.0.1"] | .[]' "$CONF")
+    # bypass → queries would leave in plaintext outside the tunnel. Register
+    # tunnel-routed resolvers EXCLUSIVELY (-x) for $iface so the system
+    # resolves only through them (public IPs ride the policy table).
+    local -a dns_servers=()
+    mapfile -t dns_servers < <(tunnel_dns "$tfile" "$kind")
     if [ "${#dns_servers[@]}" -eq 0 ]; then
-        echo "chproxy: warning: .wg.dns is empty; DNS may leak" >&2
+        warn "x-chproxy.$kind.dns is empty; system DNS may leak"
     elif command -v resolvconf >/dev/null 2>&1; then
-        printf 'nameserver %s\n' "${dns_servers[@]}" | resolvconf -x -a "$IFACE" \
-            && DNS_PINNED=1 \
-            || echo "chproxy: warning: resolvconf -a $IFACE failed; DNS may leak" >&2
+        printf 'nameserver %s\n' "${dns_servers[@]}" | as_root resolvconf -x -a "$iface" \
+            || warn "resolvconf -a $iface failed; DNS may leak"
     else
-        echo "chproxy: warning: resolvconf not found; DNS may leak" >&2
+        warn "resolvconf not found; DNS may leak"
     fi
+}
+
+# tunnel_teardown <kind> <table> <fwmark> <iface> <cidr>… — exact reverse.
+tunnel_teardown() {
+    local kind="$1" table="$2" fwmark="$3" iface="$4"
+    shift 4
+    local -a cidrs=("$@")
+    command -v resolvconf >/dev/null 2>&1 \
+        && as_root resolvconf -d "$iface" 2>/dev/null || true
+    as_root ip route del default dev "$iface" table "$table" 2>/dev/null || true
+    local cidr
+    for cidr in "${cidrs[@]}"; do
+        as_root ip rule del to "$cidr" lookup main priority 900 2>/dev/null || true
+    done
+    as_root ip rule del fwmark "$fwmark" lookup main priority 900 2>/dev/null || true
+    as_root ip rule del lookup "$table" priority 2000 2>/dev/null || true
+}
+
+# tunnel_teardown_active <kind> — derive the parameters from the CURRENT
+# template + state (used by the CLI `off`, which didn't install anything
+# itself). Stale mismatched rules (template swapped under a dead service)
+# simply fail to match — the kernel drops the routes when the interface dies.
+tunnel_teardown_active() {
+    local kind="$1"
+    local tname
+    tname="$(sget template)"
+    local tfile
+    tfile="$(template_path "$tname")"
+    has_tunnel_section "$tfile" "$kind" \
+        || { warn "template '$tname' has no x-chproxy.$kind; cannot derive teardown parameters"; return 0; }
+    local table fwmark iface
+    table="$(tunnel_meta "$tfile" "$kind" table)"
+    fwmark="$(tunnel_meta "$tfile" "$kind" fwmark)"
+    iface="$(tunnel_meta "$tfile" "$kind" interface)"
+    local -a cidrs=()
+    local cip
+    cip="$(carrier_ip "$(cur_proxy)")"
+    is_ip "$cip" && cidrs+=("$cip/32")
+    mapfile -t -O "${#cidrs[@]}" cidrs < <(tunnel_bypass "$tfile" "$kind")
+    tunnel_teardown "$kind" "$table" "$fwmark" "$iface" "${cidrs[@]}"
 }
 
 cleanup() {
     trap - EXIT INT TERM
-    if [ "$WG_ROUTING" = 1 ]; then
-        # restore normal resolver ordering before the tunnel goes away
-        [ "$DNS_PINNED" = 1 ] && resolvconf -d "$IFACE" 2>/dev/null || true
-        ip route del default dev "$IFACE" table "$TABLE" 2>/dev/null || true
-        local cidr
-        for cidr in "${BYPASS_CIDRS[@]}"; do
-            ip rule del to "$cidr" lookup main priority 900 2>/dev/null || true
-        done
-        ip rule del fwmark "$FWMARK" lookup main priority 900 2>/dev/null || true
-        ip rule del lookup "$TABLE" priority 2000 2>/dev/null || true
+    if [ "$WG_UP" = 1 ]; then
+        tunnel_teardown wg "$WG_TABLE" "$WG_FWMARK" "$WG_IFACE" "${WG_CIDRS[@]}"
+    fi
+    if [ "$TUN_UP" = 1 ]; then
+        tunnel_teardown tun "$TUN_TABLE" "$TUN_FWMARK" "$TUN_IFACE" "${TUN_CIDRS[@]}"
     fi
     [ -n "$SB_PID" ] && { kill "$SB_PID" 2>/dev/null || true; }
     [ -n "$TMP" ] && rm -f "$TMP"
+    return 0
 }
 
-# ── modes ───────────────────────────────────────────────────────────────────
-do_switch() {
-    [ -f "$CONF" ]    || die "missing config $CONF"
-    [ -f "$PROXIES" ] || die "missing proxy list $PROXIES (edit it to add carriers)"
-    [ -n "$NAME" ]    || { usage; exit 2; }
+# ── subcommands ─────────────────────────────────────────────────────────────
+usage() {
+    cat <<'EOF'
+Usage:
+  chproxy use <proxy>                  switch carrier (keeps the template)
+  chproxy use <template> <proxy>       switch template + carrier
+  chproxy use -t <template> [<proxy>]  switch template (+ optional carrier)
+  chproxy tun on|off                   policy-route system traffic into the
+                                       active template's tun interface
+  chproxy wg on|off                    policy-route system traffic through
+                                       the active template's wg interface
+  chproxy list                         list templates and carriers
+  chproxy status                       current selection, tunnels, service
+  chproxy daemon                       run as the daemon (the systemd unit)
+  chproxy compose                      print the composed sing-box config
+  chproxy help                         this help
 
-    jq -e --arg n "$NAME" 'has($n)' "$PROXIES" >/dev/null \
-        || die "unknown proxy '$NAME' (see: chproxy -l)"
-
-    if $WG_FLAG; then
-        # reject stacking a front on a wireguard outbound (e.g. swfast)
-        if [ "$(jq -r --arg n "$NAME" '.[$n].type // ""' "$PROXIES")" = "wireguard" ]; then
-            die "cannot stack -w on a wireguard outbound '$NAME'"
-        fi
-        # ensure a front is actually configured for this profile
-        [ "$(jq -r '.wg_front != null' "$CONF")" = "true" ] \
-            || die "no wg_front configured in $CONF"
-    fi
-
-    # one-line state: "<name>" + " -t"? + " -w"?
-    local line="$NAME"
-    $TUN     && line="$line -t"
-    $WG_FLAG && line="$line -w"
-    printf '%s\n' "$line" | sudo tee "$STATE" >/dev/null \
-        || die "failed to write $STATE"
-
-    local svc
-    svc="$(jq -r '.service // "chproxy"' "$CONF")"
-    sudo systemctl restart "$svc" || die "failed to restart $svc"
-    echo "chproxy: → $line (restarted $svc)"
+State lives in /etc/chproxy/state.json: {template, proxy, tun, wg}.
+Templates are /etc/chproxy/<name>.json — complete sing-box configs plus a
+reserved "x-chproxy" {tun, wg} routing section (see the script header).
+The selected carrier from /etc/proxies.json replaces whatever the template
+tags "proxy". `chproxy <name>` is a legacy alias for `chproxy use <name>`.
+EOF
 }
 
-do_daemon() {
-    [ -f "$CONF" ]    || die "missing config $CONF"
-    [ -f "$PROXIES" ] || die "missing proxy list $PROXIES"
-    jq -e . "$CONF" >/dev/null || die "malformed $CONF"
-    jq -e . "$PROXIES" >/dev/null || die "malformed $PROXIES"
-
-    local singbox_bin default_proxy state_line
-    singbox_bin="$(jq -r '.singbox_bin // "sing-box"' "$CONF")"
-    default_proxy="$(jq -r '.defaults.proxy // ""' "$CONF")"
-
-    if [ -f "$STATE" ]; then
-        state_line="$(cat "$STATE")"
-    else
-        state_line="default"
-    fi
-    [ -n "$state_line" ] || state_line="default"
-
-    # parse "<name> [-t] [-w]"
-    local -a toks
-    read -r -a toks <<< "$state_line"
-    NAME="${toks[0]:-default}"
-    TUN=false
-    WG_FLAG=false
-    local tok
-    for tok in "${toks[@]:1}"; do
-        case "$tok" in
-            -t) TUN=true ;;
-            -w) WG_FLAG=true ;;
-            *) echo "chproxy: ignoring unknown state flag '$tok'" >&2 ;;
+cmd_use() {
+    local tflag=""
+    local -a pos=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t|--template)
+                [ $# -ge 2 ] || die "option $1 needs a template name"
+                tflag="$2"; shift 2 ;;
+            --)
+                shift
+                while [ $# -gt 0 ]; do pos+=("$1"); shift; done ;;
+            -*) die "unknown option: $1" ;;
+            *) pos+=("$1"); shift ;;
         esac
     done
+    [ "${#pos[@]}" -le 2 ] || die "usage: chproxy use [<template>] <proxy> | chproxy use -t <template> [<proxy>]"
 
-    [ "$NAME" = "default" ] && NAME="$default_proxy"
-    [ -n "$NAME" ] || die "no proxy selected and no defaults.proxy configured"
-
-    local outbound wg_endpoint carrier_ip
-    outbound="$(jq --arg n "$NAME" '.[$n] // null' "$PROXIES")"
-    [ "$outbound" != "null" ] || die "proxy '$NAME' not in $PROXIES"
-
-    wg_endpoint="null"
-    carrier_ip=""
-    if $WG_FLAG; then
-        wg_endpoint="$(jq '.wg_front // null' "$CONF")"
-        [ "$wg_endpoint" != "null" ] || die "-w requested but no wg_front in $CONF"
-        carrier_ip="$(jq -r '.server // empty' <<< "$outbound")"
-        [ -n "$carrier_ip" ] || die "carrier '$NAME' has no .server; cannot install wg routing"
+    local pos_t="" pos_p=""
+    if [ -n "$tflag" ]; then
+        pos_t="$tflag"
+        [ "${#pos[@]}" -ge 1 ] && pos_p="${pos[0]}"
+    elif [ "${#pos[@]}" -eq 2 ]; then
+        pos_t="${pos[0]}"; pos_p="${pos[1]}"
+    elif [ "${#pos[@]}" -eq 1 ]; then
+        pos_p="${pos[0]}"
+    else
+        die "usage: chproxy use [<template>] <proxy> | chproxy use -t <template> [<proxy>]"
     fi
 
+    [ -f "$PROXIES" ] || die "missing proxy list $PROXIES (edit it to add carriers)"
+
+    # resolve target template (carrier-only form keeps the current one)
+    USE_TEMPLATE="$(normalize_template "${pos_t:-$(sget template)}")" \
+        || die "invalid or reserved template name '${pos_t:-$(sget template)}'"
+    local tfile
+    tfile="$(template_path "$USE_TEMPLATE")"
+    [ -f "$tfile" ] || die "unknown template '$USE_TEMPLATE' (see: chproxy -l)"
+    jq -e . "$tfile" >/dev/null 2>&1 || die "malformed template $tfile"
+
+    # resolve target proxy ("default" → settings default; empty → keep current)
+    if [ -n "$pos_p" ]; then
+        [ "$pos_p" = "default" ] && pos_p="$DEF_PROXY"
+        USE_PROXY="$pos_p"
+    else
+        USE_PROXY="$(cur_proxy)"
+    fi
+    if [ -n "$USE_PROXY" ]; then
+        jq -e --arg n "$USE_PROXY" 'has($n)' "$PROXIES" >/dev/null \
+            || die "unknown proxy '$USE_PROXY' (see: chproxy -l)"
+        if [ "$(carrier_type "$USE_PROXY")" = "wireguard" ] && template_has_front "$tfile"; then
+            die "cannot stack wireguard carrier '$USE_PROXY' on a template with a front"
+        fi
+    fi
+
+    # tunnels persist across the switch — the target template must support them
+    USE_TUN="$(sget tun)"; USE_WG="$(sget wg)"
+    if [ "$USE_TUN" = true ] && ! has_tunnel_section "$tfile" tun; then
+        die "state has tun=true but template '$USE_TEMPLATE' has no x-chproxy.tun (run: chproxy tun off)"
+    fi
+    if [ "$USE_WG" = true ] && ! has_tunnel_section "$tfile" wg; then
+        die "state has wg=true but template '$USE_TEMPLATE' has no x-chproxy.wg (run: chproxy wg off)"
+    fi
+
+    STATE_JSON="$(jq -n --arg t "$USE_TEMPLATE" --arg p "$USE_PROXY" \
+                       --argjson tun "$USE_TUN" --argjson wg "$USE_WG" \
+                    '{ template: $t
+                     , proxy: (if $p == "" then null else $p end)
+                     , tun: $tun, wg: $wg }')"
+    state_write "$STATE_JSON"
+    as_root systemctl restart "$SVC" || die "failed to restart $SVC"
+    echo "chproxy: → template=$USE_TEMPLATE proxy=${USE_PROXY:-<none>}"
+}
+
+cmd_tunnel() {  # <kind> <on|off>
+    local kind="$1" action="$2"
+    local other; [ "$kind" = tun ] && other=wg || other=tun
+    local tname
+    tname="$(sget template)"
+    local tfile
+    tfile="$(template_path "$tname")"
+
+    if [ "$action" = on ]; then
+        [ "$(sget "$other")" = true ] \
+            && die "$other tunnel is on; run 'chproxy $other off' first"
+        has_tunnel_section "$tfile" "$kind" \
+            || die "template '$tname' has no x-chproxy.$kind section"
+        STATE_JSON="$(jq --arg k "$kind" --argjson v true '.[$k] = $v' <<< "$STATE_JSON")"
+    else
+        STATE_JSON="$(jq --arg k "$kind" --argjson v false '.[$k] = $v' <<< "$STATE_JSON")"
+    fi
+    state_write "$STATE_JSON"
+
+    if systemctl is-active --quiet "$SVC" 2>/dev/null; then
+        if [ "$action" = on ]; then
+            tunnel_apply "$kind" 0 "$(cur_proxy)"
+            echo "chproxy: $kind on"
+        else
+            tunnel_teardown_active "$kind"
+            echo "chproxy: $kind off"
+        fi
+    else
+        echo "chproxy: saved; applies when $SVC starts"
+    fi
+}
+
+cmd_list() {
+    [ -f "$PROXIES" ] || die "missing $PROXIES"
+    echo "[templates]"
+    local name mark tunnels
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        mark=" "
+        [ "$name" = "$(sget template)" ] && mark="*"
+        tunnels=""
+        has_tunnel_section "$(template_path "$name")" tun && tunnels="tun"
+        has_tunnel_section "$(template_path "$name")" wg && tunnels="${tunnels:+$tunnels, }wg"
+        [ -n "$tunnels" ] || tunnels="(no tunnels)"
+        echo "  $mark $name  ($tunnels)"
+    done < <(list_templates)
+    echo "[carriers]"
+    jq -r 'to_entries | sort_by(.key)[] | "  \(.key) (\(.value.type // "?"))"' "$PROXIES"
+}
+
+cmd_status() {
+    local tname
+    tname="$(sget template)"
+    local tfile
+    tfile="$(template_path "$tname")"
+    local p
+    p="$(cur_proxy)"
+    echo "template:  $tname"
+    if [ -f "$tfile" ]; then
+        echo "  file:     $tfile"
+    else
+        echo "  file:     MISSING ($tfile)"
+    fi
+    if [ -n "$p" ]; then
+        echo "proxy:     $p ($(carrier_type "$p"))"
+    else
+        echo "proxy:     <none — direct placeholder>"
+    fi
+    echo "tunnels:   tun=$(sget tun)  wg=$(sget wg)"
+    local kind iface table
+    for kind in tun wg; do
+        has_tunnel_section "$tfile" "$kind" || continue
+        iface="$(tunnel_meta "$tfile" "$kind" interface)"
+        table="$(tunnel_meta "$tfile" "$kind" table)"
+        if ip link show "$iface" >/dev/null 2>&1; then
+            echo "  $kind:     iface $iface up (table $table)"
+        else
+            echo "  $kind:     iface $iface down (table $table)"
+        fi
+        ip rule show 2>/dev/null | grep "lookup $table" | sed 's/^/    rule: /' || true
+    done
+    systemctl status "$SVC" --no-pager 2>/dev/null | sed -n '1,5p' || true
+}
+
+# resolve + validate the active template/carrier; leaves the template path in
+# TFILE and the carrier JSON in CARRIER_JSON ("null" when none).
+TFILE=""
+CARRIER_JSON="null"
+
+resolve_active() {
+    local tname
+    tname="$(normalize_template "$(sget template)")" \
+        || die "invalid or reserved template name in state: $(sget template)"
+    TFILE="$(template_path "$tname")"
+    [ -f "$TFILE" ] || die "template '$tname' not found at $TFILE"
+    jq -e . "$TFILE" >/dev/null 2>&1 || die "malformed template $TFILE"
+    [ -f "$PROXIES" ] || die "missing proxy list $PROXIES"
+
+    local p
+    p="$(cur_proxy)"
+    CARRIER_JSON="null"
+    if [ -n "$p" ]; then
+        CARRIER_JSON="$(carrier_get "$p")"
+        [ "$CARRIER_JSON" != "null" ] || die "proxy '$p' not in $PROXIES"
+        if [ "$(carrier_type "$p")" = "wireguard" ] && template_has_front "$TFILE"; then
+            die "wireguard carrier '$p' cannot ride template '$tname' (front detours 'proxy')"
+        fi
+    fi
+}
+
+cmd_daemon() {
+    resolve_active
+
     TMP="$(mktemp /tmp/chproxy-config.XXXXXX.json)"
-    compose_config "$TUN" "$outbound" "$wg_endpoint" > "$TMP" || { rm -f "$TMP"; die "config composition failed"; }
+    compose_config "$TFILE" "$CARRIER_JSON" > "$TMP" \
+        || { rm -f "$TMP"; die "config composition failed"; }
+    jq -e . "$TMP" >/dev/null || { rm -f "$TMP"; die "composed config is not valid JSON"; }
+    "$SB_BIN" check -c "$TMP" >/dev/null \
+        || { rm -f "$TMP"; die "sing-box rejected the composed config (see: chproxy compose)"; }
 
     export ENABLE_DEPRECATED_WIREGUARD_OUTBOUND=true
     trap cleanup EXIT INT TERM
-    "$singbox_bin" run -c "$TMP" &
+    "$SB_BIN" run -c "$TMP" &
     SB_PID=$!
-    if $WG_FLAG; then
-        setup_wg_routing "$carrier_ip"
-    fi
+
+    local tname
+    tname="$(sget template)"
+    local kind p
+    p="$(cur_proxy)"
+    for kind in wg tun; do
+        [ "$(sget "$kind")" = true ] || continue
+        if ! has_tunnel_section "$TFILE" "$kind"; then
+            warn "state has $kind=true but template '$tname' lacks x-chproxy.$kind; skipping"
+            continue
+        fi
+        tunnel_apply "$kind" 1 "$p"
+    done
     wait "$SB_PID"
 }
 
-do_list() {
-    [ -f "$PROXIES" ] || die "missing $PROXIES"
-    echo "[carriers]"
-    jq -r 'keys[]' "$PROXIES" | sed 's/^/  /'
-    if [ -f "$CONF" ]; then
-        echo "[wg front]"
-        jq -r '
-          .wg_front
-          | if . == null
-            then "  (none — -w disabled)"
-            else "  enabled (interface: " + (.name // "?") + ")"
-            end
-        ' "$CONF" 2>/dev/null || true
-    fi
+cmd_compose() {
+    resolve_active
+    compose_config "$TFILE" "$CARRIER_JSON"
 }
 
-do_status() {
-    if [ -f "$STATE" ]; then
-        echo "current: $(cat "$STATE")"
-    else
-        echo "current: default (no state file)"
-    fi
-    if [ -f "$CONF" ]; then
-        local svc
-        svc="$(jq -r '.service // "chproxy"' "$CONF")"
-        systemctl status "$svc" --no-pager 2>/dev/null | sed -n '1,5p' || true
-    fi
-}
+# ── dispatch ────────────────────────────────────────────────────────────────
+settings_load
+STATE_JSON="$(state_read)"
 
-case "$MODE" in
-    list)   do_list ;;
-    status) do_status ;;
-    daemon) do_daemon ;;
-    switch) do_switch ;;
-    *)      usage; exit 2 ;;
+case "${1:-}" in
+    use)     shift; cmd_use "$@" ;;
+    tun|wg)
+        [ $# -eq 2 ] || die "usage: chproxy $1 on|off"
+        cmd_tunnel "$1" "$2" ;;
+    list|--list|-l)     cmd_list ;;
+    status|--status|-s) cmd_status ;;
+    daemon|-d)          cmd_daemon ;;
+    compose)            cmd_compose ;;
+    help|--help|-h)     usage; exit 0 ;;
+    -t|-w) die "tunnel flags moved: use 'chproxy use …' and 'chproxy tun/wg on|off'" ;;
+    "")     usage; exit 2 ;;
+    -*)     die "unknown option: $1 (see: chproxy help)" ;;
+    *)      cmd_use "$@" ;;   # legacy: chproxy <name>
 esac

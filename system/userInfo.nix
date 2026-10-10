@@ -126,13 +126,13 @@ in
                 # Wireguard front
                 wgFront = lib.mkOption {
                   type = lib.types.str;
-                  description = "Raw JSON string of this profile's single wireguard front endpoint — the system-wg interface that `chproxy -w` brings up. Baked into chproxy.json by mkBaseConfig.";
+                  description = "Raw JSON string of this profile's wireguard front endpoint — the system-wg interface `chproxy wg on` policy-routes. Baked into the /etc/chproxy/main.json template by mkTemplate (utils/sing-box.nix).";
                   example = ''{"type":"wireguard","tag":"wire",...}'';
                 };
 
                 defaultProxy = lib.mkOption {
                   type = lib.types.str;
-                  description = ''Name of the default proxy (a key in the runtime /etc/proxies.json) that "default" resolves to.'';
+                  description = ''Name of the default carrier (a key in the runtime /etc/proxies.json), rendered into /etc/chproxy/settings.json; used when no proxy is selected.'';
                   example = "pro";
                 };
 

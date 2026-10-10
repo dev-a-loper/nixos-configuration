@@ -14,16 +14,25 @@ let
   sing-box = unstable.sing-box;
   slipstream = (pkgs.callPackage ./slipstream.nix { });
   paqet = (pkgs.callPackage ./paqet.nix { });
-  chproxy = pkgs.callPackage ../utils/chproxy.nix { inherit sing-box; };
+  chproxy = pkgs.callPackage ../utils/chproxy { inherit sing-box; };
 
-  # the per-profile base config chproxy reads at /etc/chproxy/chproxy.json.
-  # Carrier outbounds are NOT here — they live in the runtime /etc/proxies.json.
+  # chproxy runtime files (see utils/chproxy/chproxy for the full contract):
+  # one full sing-box template (mixed + tun + this profile's wg front) plus
+  # the settings globals. Carrier outbounds are NOT here — they live in the
+  # runtime /etc/proxies.json; extra templates can be dropped into /etc/chproxy
+  # by hand (any *.json except state/settings/chproxy).
   sb = import ../utils/sing-box.nix;
-  baseConfig = sb.mkBaseConfig {
-    defaultProxy = secrets.defaultProxy;
+  mainTemplate = sb.mkTemplate {
     wgFront = secrets.wgFront;
     wgBypass = secrets.wg-bypass;
   };
+  # carrier-direct escape hatch: same inbounds, no wg front — for carriers
+  # that can't carry the front's UDP (e.g. socks) or when the front is down.
+  plainTemplate = sb.mkTemplate { };
+  chproxySettings = sb.mkSettings { defaultProxy = secrets.defaultProxy; };
+  mainJson = pkgs.writeText "chproxy-main.json" (builtins.toJSON mainTemplate);
+  plainJson = pkgs.writeText "chproxy-plain.json" (builtins.toJSON plainTemplate);
+  settingsJson = pkgs.writeText "chproxy-settings.json" (builtins.toJSON chproxySettings);
 in
 {
   imports = [ ];
@@ -83,18 +92,14 @@ in
   # programs.throne.tunMode.setuid = false;
   # programs.throne.package = unstable.throne;
 
-  # chproxy base config (per-profile: base + the single wg front). The carrier
-  # outbounds are a separate, runtime-writable file at /etc/proxies.json.
-  environment.etc."chproxy/chproxy.json".source = pkgs.writeText "chproxy.json" (
-    builtins.toJSON baseConfig
-  );
-
-  # seed /etc/current-proxy with "default" once (writable runtime state — never
-  # an environment.etc store symlink). chproxy also treats an absent file as
-  # "default", which resolves to chproxy.json's defaults.proxy.
-  systemd.tmpfiles.rules = [
-    "f /etc/current-proxy 0644 root root - default"
-  ];
+  # chproxy template + settings (per-profile). The template carries this
+  # profile's wg front and both tunnel routing sections (x-chproxy); state
+  # (/etc/chproxy/state.json) is writable runtime data — never an
+  # environment.etc store symlink. A legacy /etc/current-proxy is migrated by
+  # chproxy itself on first run.
+  environment.etc."chproxy/main.json".source = mainJson;
+  environment.etc."chproxy/plain.json".source = plainJson;
+  environment.etc."chproxy/settings.json".source = settingsJson;
 
   environment.systemPackages = [
     slipstream
@@ -189,12 +194,19 @@ in
       enable = true;
       description = "chproxy — sing-box switcher";
       after = [ "network.target" ];
+      # environment.etc changes alone don't restart units — the daemon composes
+      # its config at START, so a rebuilt template must bounce the service.
+      restartTriggers = [
+        mainJson
+        plainJson
+        settingsJson
+      ];
       serviceConfig = {
         Restart = "always";
-        # User = "novpn"; # ← runs as novpn, triggers the uid routing rule
-        # Group = "novpn";
-        IPMark = 520;
-        ExecStart = "${chproxy}/bin/chproxy -d";
+        # NOTE: the old IPMark=520 was silently ignored by systemd ("Unknown
+        # key"); sing-box's anti-recursion mark now comes from the template's
+        # route.default_mark instead (see utils/sing-box.nix).
+        ExecStart = "${chproxy}/bin/chproxy daemon";
       };
       path = [
         sing-box
