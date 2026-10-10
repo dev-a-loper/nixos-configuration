@@ -125,8 +125,9 @@ in
 
                 # Wireguard front
                 wgFront = lib.mkOption {
-                  type = lib.types.str;
-                  description = "Raw JSON string of this profile's wireguard front endpoint — the system-wg interface `chproxy wg on` policy-routes. Baked into the /etc/chproxy/main.json template by mkTemplate (utils/sing-box.nix).";
+                  type = lib.types.nullOr lib.types.str;
+                  default = null;
+                  description = "Raw JSON string of this profile's wireguard front endpoint — the system-wg interface `chproxy wg on` policy-routes, baked into the /etc/chproxy/main.json template by mkTemplate (utils/sing-box.nix). null (the default) renders a carrier-direct main template with no front.";
                   example = ''{"type":"wireguard","tag":"wire",...}'';
                 };
 

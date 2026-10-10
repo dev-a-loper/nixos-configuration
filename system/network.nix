@@ -22,11 +22,13 @@ let
   # runtime /etc/proxies.json; extra templates can be dropped into /etc/chproxy
   # by hand (any *.json except state/settings/chproxy).
   sb = import ../utils/sing-box.nix;
+  # main carries this profile's wg front only when the profile sets one
+  # (secrets.wgFront — james does; the default boots carrier-direct).
   mainTemplate = sb.mkTemplate {
     wgFront = secrets.wgFront;
     wgBypass = secrets.wg-bypass;
   };
-  # carrier-direct escape hatch: same inbounds, no wg front — for carriers
+  # carrier-direct escape hatch: same inbounds, never a front — for carriers
   # that can't carry the front's UDP (e.g. socks) or when the front is down.
   plainTemplate = sb.mkTemplate { };
   chproxySettings = sb.mkSettings { defaultProxy = secrets.defaultProxy; };

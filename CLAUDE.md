@@ -127,7 +127,7 @@ Required keys:
 | Key | Purpose |
 |-----|---------|
 | `HASHED_PASSWORD` | User password hash |
-| `wgFront` | Raw JSON of this profile's wireguard front (the system-wg interface `chproxy wg on` policy-routes; baked into `/etc/chproxy/main.json`) |
+| `wgFront` | Raw JSON of a profile's wireguard front baked into `/etc/chproxy/main.json` (`chproxy wg on` policy-routes it). `null` (the default) = carrier-direct main; profiles opt in via `lib.mkForce` |
 | `defaultProxy` | Default carrier name (a key in the runtime `/etc/proxies.json`); fallback when nothing is selected |
 | `OPENAI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | AI API keys |
 | `OPENAI_API_HOST` | API host override |
