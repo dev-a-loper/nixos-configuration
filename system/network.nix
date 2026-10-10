@@ -39,6 +39,16 @@ in
 {
   imports = [ ];
   networking.nameservers = [ "1.1.1.1" ];
+  # No IPv6 egress, ever: chproxy's tunnels policy-route IPv4 only, so any v6
+  # path would bypass them (IP leak). The ISP is v4-only today — this keeps
+  # it moot even if that ever changes. sysctls are the hard guarantee (all +
+  # default covers future interfaces); enableIPv6=false is the declarative
+  # flag. Tailscale falls back to v4 fine.
+  networking.enableIPv6 = false;
+  boot.kernel.sysctl = {
+    "net.ipv6.conf.all.disable_ipv6" = 1;
+    "net.ipv6.conf.default.disable_ipv6" = 1;
+  };
   networking.networkmanager.enable = true;
   networking.firewall.allowedTCPPorts = [
     3080
