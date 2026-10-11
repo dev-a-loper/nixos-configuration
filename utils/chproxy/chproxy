@@ -23,8 +23,12 @@
 # Carriers: the selected carrier replaces whatever the ACTIVE template tags
 # "proxy" (outbound or endpoint — e.g. the rendered {"type":"direct"}
 # placeholder). A wireguard-type carrier is injected into `endpoints` instead
-# of `outbounds` (sing-box ≥1.12). A template whose endpoint detours "proxy"
-# (a front riding the carrier) therefore cannot host a wireguard carrier.
+# of `outbounds` (sing-box ≥1.12). sing-box resolves detour/route tags against
+# outbounds AND endpoints alike (the outbound manager falls back to the
+# endpoint manager), so a front endpoint detouring "proxy" rides ANY carrier —
+# wireguard included: wg-over-wg, the front's transport socket dialed through
+# the carrier endpoint. No fallback path exists, so it can't silently bypass
+# the carrier either.
 #
 # Tunnels: `chproxy tun on` / `chproxy wg on` install POLICY ROUTING ONLY —
 # default route via the interface the active template already provides, into
@@ -169,11 +173,6 @@ has_tunnel_section() {
 tunnel_meta()   { jq -r --arg k "$2" --arg f "$3" '.["x-chproxy"][$k][$f] // empty' "$1"; }
 tunnel_bypass() { jq -r --arg k "$2" '.["x-chproxy"][$k].bypass[]? // empty' "$1"; }
 tunnel_dns()    { jq -r --arg k "$2" '.["x-chproxy"][$k].dns[]? // empty' "$1"; }
-
-# does the template have an endpoint (front) riding the carrier?
-template_has_front() {
-    jq -e 'any(.endpoints[]?; .detour == "proxy")' "$1" >/dev/null 2>&1
-}
 
 # ── carriers ────────────────────────────────────────────────────────────────
 carrier_get()  { jq --arg n "$1" '.[$n] // null' "$PROXIES"; }
@@ -436,9 +435,6 @@ cmd_use() {
     if [ -n "$USE_PROXY" ]; then
         jq -e --arg n "$USE_PROXY" 'has($n)' "$PROXIES" >/dev/null \
             || die "unknown proxy '$USE_PROXY' (see: chproxy -l)"
-        if [ "$(carrier_type "$USE_PROXY")" = "wireguard" ] && template_has_front "$tfile"; then
-            die "cannot stack wireguard carrier '$USE_PROXY' on a template with a front"
-        fi
     fi
 
     # tunnels persist across the switch — the target template must support them
@@ -564,9 +560,6 @@ resolve_active() {
     if [ -n "$p" ]; then
         CARRIER_JSON="$(carrier_get "$p")"
         [ "$CARRIER_JSON" != "null" ] || die "proxy '$p' not in $PROXIES"
-        if [ "$(carrier_type "$p")" = "wireguard" ] && template_has_front "$TFILE"; then
-            die "wireguard carrier '$p' cannot ride template '$tname' (front detours 'proxy')"
-        fi
     fi
 }
 
@@ -580,7 +573,6 @@ cmd_daemon() {
     "$SB_BIN" check -c "$TMP" >/dev/null \
         || { rm -f "$TMP"; die "sing-box rejected the composed config (see: chproxy compose)"; }
 
-    export ENABLE_DEPRECATED_WIREGUARD_OUTBOUND=true
     trap cleanup EXIT INT TERM
     "$SB_BIN" run -c "$TMP" &
     SB_PID=$!
