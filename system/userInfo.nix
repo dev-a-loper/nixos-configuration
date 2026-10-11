@@ -123,12 +123,10 @@ in
                   description = "wireguard config for wg0";
                 };
 
-                # Wireguard front
-                wgFront = lib.mkOption {
-                  type = lib.types.nullOr lib.types.str;
-                  default = null;
-                  description = "Raw JSON string of this profile's wireguard front endpoint — the system-wg interface `chproxy wg on` policy-routes, baked into the /etc/chproxy/main.json template by mkTemplate (utils/sing-box.nix). null (the default) renders a carrier-direct main template with no front.";
-                  example = ''{"type":"wireguard","tag":"wire",...}'';
+                # chproxy templates (custom per profile)
+                chproxyTemplates = lib.mkOption {
+                  type = lib.types.attrsOf lib.types.attrs;
+                  description = ''This profile's chproxy templates: name → COMPLETE custom sing-box config, rendered 1:1 to /etc/chproxy/<name>.json by system/network.nix (no shared engine — each secrets.*.nix writes its own, so profiles can differ arbitrarily: ports, fronts, inbounds…). Two contract points, everything else is plain sing-box: the reserved top-level "x-chproxy" {tun,wg} routing section (stripped by chproxy before sing-box sees it, drives `chproxy tun/wg on` — see the chproxy script header) and the "proxy"-tagged outbound, the placeholder the selected carrier from /etc/proxies.json replaces. Reserved names: state, settings, chproxy.'';
                 };
 
                 defaultProxy = lib.mkOption {

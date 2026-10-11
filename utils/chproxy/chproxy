@@ -40,8 +40,9 @@
 # own dials, and the @900 fwmark rule lets them escape the policy table (the
 # anti-recursion that also covers domain-server carriers whose IP can't be
 # bypass-listed; the old unit's IPMark= never worked, systemd ignores it).
-# 521 belongs to the independent tailscale sing-box (james) → table 123 @1000;
-# never reuse 520/521 for anything else.
+# (521 used to belong to james's independent tailscale sing-box → table 123
+# @1000; that instance now detours through the mixed inbound instead, so 521
+# is free again.)
 set -uo pipefail
 
 # ── paths (env-overridable, e.g. for testing) ──────────────────────────────

@@ -105,15 +105,15 @@ flake.nix → nixosConfigurations
 Secrets live in `vars/secrets.*.nix` (gitignored, matched by `vars/*.nix` in `.gitignore`):
 
 - `vars/secrets.default.nix` — **boot parent**: forwards shared infrastructure
-  (OpenVPN configs, API keys) plus Ehsan's profile (location, keys, password) and
-  selects Ehsan's wireguard front (`warpEndpoint`). Carrier outbounds are **not**
-  in Nix — they're the runtime file `/etc/proxies.json`.
+  (OpenVPN configs, API keys) plus Ehsan's profile (location, keys, password)
+  and carries Ehsan's chproxy templates (`chproxyTemplates`). Carrier outbounds
+  are **not** in Nix — they're the runtime file `/etc/proxies.json`.
 - `vars/secrets.<name>.nix` — each becomes a runtime-switchable
   `specialisation.<name>` (auto-discovered by `flake.nix` via `readDir`). It is a
   **delta** on the parent: it inherits shared keys via `inheritParentConfig` and
-  `mkForce`-overrides only what differs (identity, location, keys, the wg front),
-  plus any system overrides (e.g. a different user's identity +
-  timezone/service tweaks).
+  `mkForce`-overrides only what differs (identity, location, keys, its own
+  `chproxyTemplates`), plus any system overrides (e.g. a different user's
+  identity + timezone/service tweaks).
 
 They are injected into `config.userConfiguration.secrets`; the full schema is
 defined in `system/userInfo.nix`. The secrets evaluate because the flake is
@@ -127,7 +127,7 @@ Required keys:
 | Key | Purpose |
 |-----|---------|
 | `HASHED_PASSWORD` | User password hash |
-| `wgFront` | Raw JSON of a profile's wireguard front baked into `/etc/chproxy/main.json` (`chproxy wg on` policy-routes it). `null` (the default) = carrier-direct main; profiles opt in via `lib.mkForce` |
+| `chproxyTemplates` | This profile's chproxy templates — name → complete custom sing-box config (+ reserved `x-chproxy` section), authored by hand in each `vars/secrets.*.nix` and rendered 1:1 to `/etc/chproxy/<name>.json`. No shared engine; profiles override via `lib.mkForce` |
 | `defaultProxy` | Default carrier name (a key in the runtime `/etc/proxies.json`); fallback when nothing is selected |
 | `OPENAI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | AI API keys |
 | `OPENAI_API_HOST` | API host override |
@@ -152,7 +152,8 @@ Hardware config goes in `vars/hardware-configuration.nix`.
 
 ## Networking & Proxies
 
-- Proxy always available on `localhost:1080` (socks5)
+- Proxy always available on `localhost:1080` (socks5); the james
+  specialisation moves it to `localhost:3080`
 - VPN options: ExpressVPN, OpenVPN, AmneziaVPN (awg), Tor
 - `slipstream` package provides covert DNS channel
 - `chproxy` (plain bash + jq, packaged at `utils/chproxy/` and exposed as the
@@ -168,12 +169,18 @@ Hardware config goes in `vars/hardware-configuration.nix`.
   (policy routing only — applied live, no restart; mutually exclusive),
   plus `list`, `status`, `daemon`, `compose` (debug dry-run). `chproxy <name>`
   is a legacy alias for `use <name>`.
-- Nix renders `/etc/chproxy/main.json` (mixed + tun inbounds + this profile's
-  wg front — `wg on` policy-routes `www`, `tun on` policy-routes `throne-tun`)
-  and `/etc/chproxy/settings.json`; further templates can be dropped into
-  `/etc/chproxy` at runtime. Carrier outbounds live in the **runtime**
-  `/etc/proxies.json` (edit directly, no rebuild).
-- Configured in `system/network.nix`; renderer in `utils/sing-box.nix`
+- Nix renders the profile's `secrets.chproxyTemplates` (custom, hand-authored
+  per profile in `vars/secrets.*.nix` — e.g. Ehsan's are carrier-direct, james's
+  `main` carries the 5.161 wg front with socks on `:3080`) verbatim into
+  `/etc/chproxy/<name>.json`, plus `/etc/chproxy/settings.json`; further
+  templates can be dropped into `/etc/chproxy` at runtime. Carrier outbounds
+  live in the **runtime** `/etc/proxies.json` (edit directly, no rebuild).
+- Rendered in `system/network.nix` — there is no shared template engine; edit a
+  profile's templates in its `vars/secrets.*.nix`
+- james additionally runs an independent sing-box (`services.sing-box`) with a
+  tailscale endpoint on `:2080` whose underlay detours through chproxy's main
+  mixed inbound (`127.0.0.1:3080`) — i.e. through the active swappable
+  template + carrier
 
 ## Claude Code Integration
 

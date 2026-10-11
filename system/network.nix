@@ -1,5 +1,6 @@
 {
   config,
+  lib,
   pkgs,
   unstable,
   ...
@@ -16,25 +17,28 @@ let
   paqet = (pkgs.callPackage ./paqet.nix { });
   chproxy = pkgs.callPackage ../utils/chproxy { inherit sing-box; };
 
-  # chproxy runtime files (see utils/chproxy/chproxy for the full contract):
-  # one full sing-box template (mixed + tun + this profile's wg front) plus
-  # the settings globals. Carrier outbounds are NOT here — they live in the
-  # runtime /etc/proxies.json; extra templates can be dropped into /etc/chproxy
-  # by hand (any *.json except state/settings/chproxy).
-  sb = import ../utils/sing-box.nix;
-  # main carries this profile's wg front only when the profile sets one
-  # (secrets.wgFront — james does; the default boots carrier-direct).
-  mainTemplate = sb.mkTemplate {
-    wgFront = secrets.wgFront;
-    wgBypass = secrets.wg-bypass;
-  };
-  # carrier-direct escape hatch: same inbounds, never a front — for carriers
-  # that can't carry the front's UDP (e.g. socks) or when the front is down.
-  plainTemplate = sb.mkTemplate { };
-  chproxySettings = sb.mkSettings { defaultProxy = secrets.defaultProxy; };
-  mainJson = pkgs.writeText "chproxy-main.json" (builtins.toJSON mainTemplate);
-  plainJson = pkgs.writeText "chproxy-plain.json" (builtins.toJSON plainTemplate);
-  settingsJson = pkgs.writeText "chproxy-settings.json" (builtins.toJSON chproxySettings);
+  # chproxy runtime files (see utils/chproxy/chproxy for the full contract).
+  # The templates are FULLY CUSTOM per profile — plain data authored in the
+  # profile's vars/secrets.<name>.nix as secrets.chproxyTemplates (name →
+  # complete sing-box config + the reserved x-chproxy section) and rendered
+  # here 1:1, untouched. There is deliberately no shared template engine:
+  # profiles differ by editing their own template, not by threading options
+  # through one. Carrier outbounds are NOT here — they live in the runtime
+  # /etc/proxies.json; extra templates can be dropped into /etc/chproxy by
+  # hand (any *.json except state/settings/chproxy).
+  templateFiles = lib.mapAttrs (
+    name: cfg: pkgs.writeText "chproxy-${name}.json" (builtins.toJSON cfg)
+  ) secrets.chproxyTemplates;
+  settingsJson = pkgs.writeText "chproxy-settings.json" (builtins.toJSON {
+    service = "chproxy";
+    singbox_bin = "sing-box";
+    proxies_file = "/etc/proxies.json";
+    state_file = "/etc/chproxy/state.json";
+    defaults = {
+      template = "main";
+      proxy = secrets.defaultProxy;
+    };
+  });
 in
 {
   imports = [ ];
@@ -104,14 +108,15 @@ in
   # programs.throne.tunMode.setuid = false;
   # programs.throne.package = unstable.throne;
 
-  # chproxy template + settings (per-profile). The template carries this
-  # profile's wg front and both tunnel routing sections (x-chproxy); state
+  # chproxy templates + settings (per-profile data, rendered verbatim). State
   # (/etc/chproxy/state.json) is writable runtime data — never an
   # environment.etc store symlink. A legacy /etc/current-proxy is migrated by
   # chproxy itself on first run.
-  environment.etc."chproxy/main.json".source = mainJson;
-  environment.etc."chproxy/plain.json".source = plainJson;
-  environment.etc."chproxy/settings.json".source = settingsJson;
+  environment.etc = (
+    lib.mapAttrs' (name: file: lib.nameValuePair "chproxy/${name}.json" { source = file; }) templateFiles
+  ) // {
+    "chproxy/settings.json".source = settingsJson;
+  };
 
   environment.systemPackages = [
     slipstream
@@ -208,16 +213,12 @@ in
       after = [ "network.target" ];
       # environment.etc changes alone don't restart units — the daemon composes
       # its config at START, so a rebuilt template must bounce the service.
-      restartTriggers = [
-        mainJson
-        plainJson
-        settingsJson
-      ];
+      restartTriggers = (lib.attrValues templateFiles) ++ [ settingsJson ];
       serviceConfig = {
         Restart = "always";
         # NOTE: the old IPMark=520 was silently ignored by systemd ("Unknown
-        # key"); sing-box's anti-recursion mark now comes from the template's
-        # route.default_mark instead (see utils/sing-box.nix).
+        # key"); sing-box's anti-recursion mark comes from the template's
+        # route.default_mark instead (authored in vars/secrets.*.nix).
         ExecStart = "${chproxy}/bin/chproxy daemon";
       };
       path = [
