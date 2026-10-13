@@ -42,6 +42,10 @@ let
 in
 {
   imports = [ ];
+  # Soft DNS posture for the boot parent/default profile: NM keeps feeding
+  # DHCP/ISP resolvers into resolvconf as usual. The hard no-leak posture
+  # (NM dns=none + static 1.1.1.1/1.0.0.1 base) is james-only — see
+  # vars/secrets.james.nix.
   networking.nameservers = [ "1.1.1.1" ];
   # No IPv6 egress, ever: chproxy's tunnels policy-route IPv4 only, so any v6
   # path would bypass them (IP leak). The ISP is v4-only today — this keeps
