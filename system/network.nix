@@ -12,7 +12,36 @@ let
     text = secrets.awg-config;
     destination = "/awg.conf";
   };
-  sing-box = unstable.sing-box;
+  sing-box = pkgs.sing-box.overrideAttrs (
+    finalAttrs: prevAttrs: {
+      pname = "sing-box-extended";
+      version = "1.14.1-extended-2.7.2";
+
+      src = pkgs.fetchFromGitHub {
+        owner = "shtorm-7";
+        repo = "sing-box-extended";
+        tag = "v${finalAttrs.version}";
+        hash = "sha256-bDE90wcoTLBm3lDICO+z7Kl+hhIXBYZN5lsrLXQbL10=";
+      };
+
+      vendorHash = "sha256-fR6ZlkSBiM0EiGwd6mWQ07p+gMnYuhugai4x4SsUNiU=";
+
+      # keep everything nixpkgs builds sing-box with, add the extended gates
+      tags = prevAttrs.tags ++ [
+        "with_masque"
+        "with_mtproxy"
+        "with_trusttunnel"
+        "with_call"
+        "with_sudoku"
+      ];
+
+      meta = prevAttrs.meta // {
+        description = "Universal proxy platform (extended fork)";
+        homepage = "https://github.com/shtorm-7/sing-box-extended";
+        maintainers = [ ];
+      };
+    }
+  );
   slipstream = (pkgs.callPackage ./slipstream.nix { });
   paqet = (pkgs.callPackage ./paqet.nix { });
   chproxy = pkgs.callPackage ../utils/chproxy { inherit sing-box; };
@@ -29,16 +58,18 @@ let
   templateFiles = lib.mapAttrs (
     name: cfg: pkgs.writeText "chproxy-${name}.json" (builtins.toJSON cfg)
   ) secrets.chproxyTemplates;
-  settingsJson = pkgs.writeText "chproxy-settings.json" (builtins.toJSON {
-    service = "chproxy";
-    singbox_bin = "sing-box";
-    proxies_file = "/etc/proxies.json";
-    state_file = "/etc/chproxy/state.json";
-    defaults = {
-      template = "main";
-      proxy = secrets.defaultProxy;
-    };
-  });
+  settingsJson = pkgs.writeText "chproxy-settings.json" (
+    builtins.toJSON {
+      service = "chproxy";
+      singbox_bin = "sing-box";
+      proxies_file = "/etc/proxies.json";
+      state_file = "/etc/chproxy/state.json";
+      defaults = {
+        template = "main";
+        proxy = secrets.defaultProxy;
+      };
+    }
+  );
 in
 {
   imports = [ ];
@@ -116,11 +147,13 @@ in
   # (/etc/chproxy/state.json) is writable runtime data — never an
   # environment.etc store symlink. A legacy /etc/current-proxy is migrated by
   # chproxy itself on first run.
-  environment.etc = (
-    lib.mapAttrs' (name: file: lib.nameValuePair "chproxy/${name}.json" { source = file; }) templateFiles
-  ) // {
-    "chproxy/settings.json".source = settingsJson;
-  };
+  environment.etc =
+    (lib.mapAttrs' (
+      name: file: lib.nameValuePair "chproxy/${name}.json" { source = file; }
+    ) templateFiles)
+    // {
+      "chproxy/settings.json".source = settingsJson;
+    };
 
   environment.systemPackages = [
     slipstream
