@@ -172,6 +172,7 @@ in
 
   };
   environment.systemPackages = with pkgs; [
+    lutris
     alacritty
     # Window manager and utils
     wofi
