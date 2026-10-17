@@ -172,7 +172,8 @@ in
 
   };
   environment.systemPackages = with pkgs; [
-    lutris
+    unstable.lutris
+    unstable.umu-launcher
     alacritty
     # Window manager and utils
     wofi
