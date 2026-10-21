@@ -70,8 +70,8 @@ in
       llm-agents.claude-agent-acp
       llm-agents.agent-browser
       (pkgs.writeShellScriptBin "claude-code-acp" "${llm-agents.claude-agent-acp}/bin/claude-agent-acp")
-      llm-agents.claude-plugins
-      llm-agents.skills-installer
+      # llm-agents.claude-plugins
+      # llm-agents.skills-installer
       p7zip
       nmap
 
