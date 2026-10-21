@@ -174,6 +174,7 @@ in
   environment.systemPackages = with pkgs; [
     unstable.lutris
     unstable.umu-launcher
+    unstable.chromium
     alacritty
     # Window manager and utils
     wofi
