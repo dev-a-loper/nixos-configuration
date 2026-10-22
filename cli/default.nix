@@ -14,6 +14,8 @@ let
   userName = config.userConfiguration.name;
 in
 {
+  imports = [ ./locallm.nix ];
+
   environment.shells = with pkgs; [ zsh ];
   users.defaultUserShell = pkgs.zsh;
   # $ nix search wget
@@ -27,12 +29,7 @@ in
   environment.variables.GROQ_API_KEY = secrets.GROQ_API_KEY;
   environment.variables.OPENAI_API_HOST = secrets.OPENAI_API_HOST;
   environment.variables.OPENROUTER_API_KEY = secrets.OPENROUTER_API_KEY;
-
-  environment.variables.ANTHROPIC_AUTH_TOKEN = secrets.ANTHROPIC_AUTH_TOKEN;
-  environment.variables.ANTHROPIC_BASE_URL = secrets.ANTHROPIC_BASE_URL;
-  environment.variables.ANTHROPIC_DEFAULT_HAIKU_MODEL = "glm-5.1";
-  environment.variables.ANTHROPIC_DEFAULT_SONNET_MODEL = "glm-5.1";
-  environment.variables.ANTHROPIC_DEFAULT_OPUS_MODEL = "glm-5.1";
+  # ANTHROPIC_* + OPENCODE_MODEL defaults live in ./locallm.nix
 
   home-manager.users.${userName} = {
     programs.taskwarrior = {

@@ -52,6 +52,7 @@ flake.nix                      # Central orchestrator, defines all systems
 │   ├── nix.nix               # Flakes, GC settings
 │   ├── network.nix           # VPNs, proxies, ExpressVPN
 │   ├── slipstream.nix        # Custom DNS channel package
+│   ├── llama-cpp.nix         # /etc/llama-cpp/qwen3.8-claude.jinja (patched chat template)
 │   └── printing.nix          # Printing service
 │
 ├── gui/                      # Hyprland/Wayland desktop
@@ -68,6 +69,7 @@ flake.nix                      # Central orchestrator, defines all systems
 ├── programming/              # Development environment
 │   ├── editors.nix           # Neovim via nixvim
 │   ├── claude-code.nix       # Claude Code config (AI assistant)
+│   ├── opencode.nix          # OpenCode config (z.ai provider + local llama.cpp)
 │   ├── virtualisation.nix    # Docker, libvirt, virt-manager
 │   └── nixvim/               # Modular Neovim config
 │       ├── lsp.nix           # LSP, completion, keybinds

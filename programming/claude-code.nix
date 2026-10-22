@@ -14,14 +14,11 @@ in
     package = llm-agents.claude-code;
     settings = {
       env = {
-        ANTHROPIC_DEFAULT_HAIKU_MODEL = "glm-5.3-flash[1m]";
-        ANTHROPIC_DEFAULT_SONNET_MODEL = "glm-5.3";
-        ANTHROPIC_DEFAULT_OPUS_MODEL = "glm-5.3";
         AGENT_BROWSER_HEADED = "true";
         AGENT_BROWSER_IGNORE_HTTPS_ERRORS = "true";
         # https_proxy = "http://localhost:1080";
-        ANTHROPIC_AUTH_TOKEN = secrets.ANTHROPIC_AUTH_TOKEN;
-        ANTHROPIC_BASE_URL = "https://api.z.ai/api/anthropic";
+        # ANTHROPIC_* lives in ../cli/locallm.nix (system env). settings.env
+        # would clobber the shell, breaking `locallm`.
       };
       hooks = {
         Notification = [

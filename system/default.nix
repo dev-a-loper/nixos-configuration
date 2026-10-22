@@ -14,6 +14,7 @@
     ./nix.nix
     ./network.nix
     ./printing.nix
+    ./llama-cpp.nix
   ];
 
   time.timeZone = "Asia/Tehran";

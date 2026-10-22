@@ -16,6 +16,7 @@ in
     ./editors.nix
     ./virtualisation.nix
     ./claude-code.nix
+    ./opencode.nix
   ];
   # git
   home-manager.users.${userName} = {
