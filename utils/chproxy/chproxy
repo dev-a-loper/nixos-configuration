@@ -45,8 +45,8 @@
 # anti-recursion that also covers domain-server carriers whose IP can't be
 # bypass-listed; the old unit's IPMark= never worked, systemd ignores it).
 # (521 used to belong to james's independent tailscale sing-box → table 123
-# @1000; that instance now detours through the mixed inbound instead, so 521
-# is free again.)
+# @1000; that instance is gone — tailscale egress is james's ts-end template
+# now — so 521 is free again.)
 set -uo pipefail
 
 # ── paths (env-overridable, e.g. for testing) ──────────────────────────────

@@ -179,10 +179,13 @@ Hardware config goes in `vars/hardware-configuration.nix`.
   live in the **runtime** `/etc/proxies.json` (edit directly, no rebuild).
 - Rendered in `system/network.nix` — there is no shared template engine; edit a
   profile's templates in its `vars/secrets.*.nix`
-- james additionally runs an independent sing-box (`services.sing-box`) with a
-  tailscale endpoint on `:2080` whose underlay detours through chproxy's main
-  mixed inbound (`127.0.0.1:3080`) — i.e. through the active swappable
-  template + carrier
+- james's tailscale egress is the `ts-end` template: the sing-box tailscale
+  endpoint (embedded tsnet, exit node `desktop-6drpdjj`, state at
+  `/var/lib/sing-box/ts`; the auth key is only read if that dir is ever wiped)
+  as the exit, detouring the `proxy` carrier placeholder — the same shape as
+  `main`'s wg front, so `chproxy use ts-end <carrier>` routes the whole ts
+  underlay (control, DERP, peers) through the selected carrier. There is no
+  independent `services.sing-box` instance anymore (the old `:2080` setup)
 
 ## Claude Code Integration
 
