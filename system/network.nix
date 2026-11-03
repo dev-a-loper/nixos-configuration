@@ -139,8 +139,8 @@ in
     torsocks.enable = true;
   };
   programs.throne.enable = true;
-  # programs.throne.tunMode.enable = false;
-  # programs.throne.tunMode.setuid = false;
+  programs.throne.tunMode.enable = true;
+  programs.throne.tunMode.setuid = true;
   # programs.throne.package = unstable.throne;
 
   # chproxy templates + settings (per-profile data, rendered verbatim). State
