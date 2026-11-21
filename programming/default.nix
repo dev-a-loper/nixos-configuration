@@ -88,8 +88,8 @@ in
   ];
 
   services.postgresql.package = pkgs.postgresql_17;
-  services.pgadmin.enable = true;
-  services.pgadmin.initialEmail = "test@mail.com";
-  services.pgadmin.initialPasswordFile = "/etc/pgadminpassword";
+  # services.pgadmin.enable = true;
+  # services.pgadmin.initialEmail = "test@mail.com";
+  # services.pgadmin.initialPasswordFile = "/etc/pgadminpassword";
 
 }
