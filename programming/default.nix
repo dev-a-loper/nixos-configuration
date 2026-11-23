@@ -62,6 +62,7 @@ in
     python314Packages.jupyterlab
     # unstable.claude-code
     # unstable.aider-chat
+    unstable.deepseek-harness
     unstable.vlang
     unstable.lazysql
     unstable.sqlit-tui
