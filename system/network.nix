@@ -162,7 +162,7 @@ in
     pkgs.conntrack-tools
     pkgs.iptstate
     pkgs.nmstate
-    pkgs.xray
+    unstable.xray
     pkgs.v2ray
     sing-box
     unstable.tun2socks
