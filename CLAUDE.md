@@ -171,6 +171,18 @@ Hardware config goes in `vars/hardware-configuration.nix`.
   (policy routing only — applied live, no restart; mutually exclusive),
   plus `list`, `status`, `daemon`, `compose` (debug dry-run). `chproxy <name>`
   is a legacy alias for `use <name>`.
+- Tunnel mechanics (full story in the header of `utils/chproxy/chproxy`):
+  system traffic → `lookup <table>`; the template's `bypass` ranges AND
+  everything sing-box itself opens stay on the main table — the latter purely
+  on the fwmark (`x-chproxy.<kind>.fwmark` = `route.default_mark`), wg-quick
+  style; no carrier endpoint IP is ever special-cased. The escape is
+  two-sided: a per-tunnel nft conntrack-mark table lets the *replies* past the
+  firewall's reverse-path filter (`checkReversePath`), without which carrier
+  underlays time out with the tunnel on. `settings.escape` (rendered in
+  `system/network.nix` from `services.tailscale.enable`) keeps tailscaled's own
+  traffic on main and the tailnet in its table 52. The DNS pin is re-asserted
+  by a keeper in the daemon (openresolv exclusivity is last-writer-wins;
+  tailscaled re-registers on link changes).
 - Nix renders the profile's `secrets.chproxyTemplates` (custom, hand-authored
   per profile in `vars/secrets.*.nix` — e.g. Ehsan's are carrier-direct, james's
   `main` carries the 5.161 wg front with socks on `:3080`) verbatim into

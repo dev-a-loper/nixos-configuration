@@ -12,7 +12,7 @@ let
   llamaUrl = "http://localhost:8080";
   # model id exactly as llama-server reports it in /v1/models
   llamaModel = "unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M";
-  remoteModel = "glm-5.3";
+  remoteModel = "glm-5.4";
   remoteSmallModel = "glm-5.3-flash[1m]";
   secrets = config.userConfiguration.secrets;
 in

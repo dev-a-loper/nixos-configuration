@@ -32,18 +32,52 @@
 #
 # Tunnels: `chproxy tun on` / `chproxy wg on` install POLICY ROUTING ONLY —
 # default route via the interface the active template already provides, into
-# that section's table: `to <carrier-ip>/32 + bypass lookup main` @900,
-# `fwmark <fwmark> lookup main` @900, `lookup <table>` @2000, and an
-# exclusive resolvconf pin of the section's dns list (DNS-leak prevention).
+# that section's table. In rule order: `to <bypass> lookup main` and the
+# `settings.escape` routes @900, `fwmark <fwmark> lookup main` and the
+# `settings.escape` marks @900, `lookup <table>` @2000 — plus an nft table
+# that carries the fwmark across conntrack (see below) and an exclusive
+# resolvconf pin of the section's dns list (DNS-leak prevention).
 # `off` reverses exactly that. Tunnels are mutually exclusive; the daemon
 # re-applies them per state on every start. `chproxy use …` restarts the
 # service (and thus the tunnels); toggles apply live when possible.
 #
 # fwmark conventions: fwmark (520 by default) is the sing-box INSTANCE
 # identity — the template renders it as route.default_mark, sing-box marks its
-# own dials, and the @900 fwmark rule lets them escape the policy table (the
-# anti-recursion that also covers domain-server carriers whose IP can't be
-# bypass-listed; the old unit's IPMark= never worked, systemd ignores it).
+# own dials (carrier underlays, DNS, everything it opens), and the @900 fwmark
+# rule lets them escape the policy table: the anti-recursion, the same shape
+# as `wg set … fwmark` + `ip rule add not fwmark …`. Nothing here knows where a
+# carrier's endpoint is — IP literal, domain or share-link parser, it all rides
+# the mark (the old unit's IPMark= never worked, systemd ignores it).
+#
+# The escape has TWO halves, and the rule above is only the first: it steers
+# what sing-box SENDS, because the mark lives on its sockets. The REPLIES come
+# back with mark 0, and a host reverse-path filter re-resolves the route to the
+# SOURCE with the reply's mark: that lookup falls into the policy table,
+# "leaves" via the tunnel interface rather than the one the packet arrived on,
+# and the reply is dropped — the carrier underlay then times out although its
+# own SYNs are visibly leaving via the uplink. NixOS's firewall runs exactly
+# such a filter (`checkReversePath`: `fib saddr . mark . iif`, policy drop), so
+# every tunnel also owns an nft table that carries the mark across conntrack:
+# saved from marked packets in LOCAL_OUT, restored onto every inbound packet
+# of those connections in PREROUTING — ahead of any filter's lookup. With only
+# the rule, the escape silently covers the forward direction alone.
+#
+# Other VPNs: the catch-all at @2000 would swallow the rules of any other
+# router sitting at a HIGHER priority number — tailscale's (5210…5270)
+# included, i.e. both tailscaled's own traffic and the tailnet.
+# `settings.escape` names what must survive (NixOS renders it for tailscale):
+# fwmark selectors that keep the main table, destinations that keep their own
+# table. Both go in at @900, in front of the catch-all (routes even ahead of
+# the fwmark rules), and need nothing else:
+# tailscaled carries its own mark across conntrack itself, so its replies
+# arrive marked and pass the same reverse-path filter.
+#
+# The DNS pin is last-writer-wins: openresolv files every newly registered
+# exclusive interface one metric BELOW the lowest one, so whatever re-registers
+# while the tunnel is up takes the system resolver back — tailscaled does so on
+# every "major link change", the tunnel interface's own restart included. With
+# the route owned by the tunnel that leaves no working DNS at all, so the
+# daemon keeps watching the pin (dns_keeper) rather than writing it once.
 # (521 used to belong to james's independent tailscale sing-box → table 123
 # @1000; that instance is gone — tailscale egress is james's ts-end template
 # now — so 521 is free again.)
@@ -58,10 +92,6 @@ set -uo pipefail
 
 die() { echo "chproxy: $*" >&2; exit 1; }
 warn() { echo "chproxy: warning: $*" >&2; }
-
-# crude "looks like an IPv4 literal" test — anything else (a domain, empty)
-# can't be used for a `to <ip>/32` bypass rule
-is_ip() { case "$1" in ""|*[!0-9.]*) return 1 ;; *) return 0 ;; esac; }
 
 # ── settings + state (loaded once at dispatch) ─────────────────────────────
 SVC="chproxy"
@@ -177,8 +207,46 @@ tunnel_dns()    { jq -r --arg k "$2" '.["x-chproxy"][$k].dns[]? // empty' "$1"; 
 # ── carriers ────────────────────────────────────────────────────────────────
 carrier_get()  { jq --arg n "$1" '.[$n] // null' "$PROXIES"; }
 carrier_type() { jq -r --arg n "$1" '.[$n].type // empty' "$PROXIES"; }
-carrier_ip()   {  # wireguard carriers keep the peer address, not .server
-    jq -r --arg n "$1" '.[$n].server // .[$n].peers[0].address // empty' "$PROXIES"
+
+# ── settings.escape: other VPNs that must survive the tunnel (see header) ────
+#   marks : fwmark selectors (VALUE[/MASK]) whose traffic keeps the main table
+#   routes: [{to, table}] destinations that keep their own routing table
+escape_marks()  { jq -r '.escape.marks[]? // empty' "$CHPROXY_SETTINGS" 2>/dev/null; }
+escape_routes() { jq -r '.escape.routes[]? | "\(.to) \(.table)" // empty' "$CHPROXY_SETTINGS" 2>/dev/null; }
+RE_NUM='(0x[0-9a-fA-F]+|[0-9]+)'
+RE_MARK="^${RE_NUM}(/${RE_NUM})?\$"
+RE_CIDR='^[0-9a-fA-F:.]+(/[0-9]{1,3})?$'
+
+# escape_rules <add|del> <routes|marks> — the same rules, both ways. Nothing
+# is recorded of what was installed: settings.json is static, so the teardown
+# simply names the same rules again and misses are fine.
+#
+# ORDER MATTERS and is the caller's: `routes` goes in BEFORE the fwmark rules,
+# `marks` after. `fwmark … lookup main` always matches (main has a default
+# route), so a destination rule placed behind it is never reached by marked
+# traffic — which then rides the uplink instead of its own table.
+escape_rules() {
+    local op="$1" mark to table
+    case "$2" in
+    routes)
+        while read -r to table; do
+            if [[ "$to" =~ $RE_CIDR && "$table" =~ ^${RE_NUM}$ ]]; then
+                as_root ip rule "$op" to "$to" lookup "$table" priority 900 2>/dev/null || true
+            else
+                warn "ignoring malformed escape route '$to $table' in $CHPROXY_SETTINGS"
+            fi
+        done < <(escape_routes)
+        ;;
+    marks)
+        while read -r mark; do
+            if [[ "$mark" =~ $RE_MARK ]]; then
+                as_root ip rule "$op" fwmark "$mark" lookup main priority 900 2>/dev/null || true
+            else
+                warn "ignoring malformed escape mark '$mark' in $CHPROXY_SETTINGS"
+            fi
+        done < <(escape_marks)
+        ;;
+    esac
 }
 
 # ── config composition ──────────────────────────────────────────────────────
@@ -222,14 +290,53 @@ as_root() {
 # globals shared between the daemon and its cleanup trap: exactly what was
 # installed, so the trap can reverse it even if state changed meanwhile.
 SB_PID=""
+KEEPER_PID=""
 TMP=""
 TUN_UP=0 WG_UP=0
 TUN_TABLE="" TUN_FWMARK="" TUN_IFACE="" TUN_CIDRS=()
 WG_TABLE=""  WG_FWMARK=""  WG_IFACE=""  WG_CIDRS=()
 
-# tunnel_apply <kind> <wait:0|1> <carrier-name-or-empty>
+# ── reply side of the fwmark escape (see header) ────────────────────────────
+# One nft table per tunnel, carrying the mark across conntrack so the host's
+# reverse-path filter sees the replies as marked. `nft -f` declares a whole
+# table, so (re)installing is delete + create: nothing piles up across daemon
+# restarts and a changed fwmark replaces the old chains.
+mark_table() { printf 'chproxy_%s' "$1"; }
+
+marks_install() {  # <kind> <fwmark>
+    local table
+    table="$(mark_table "$1")"
+    command -v nft >/dev/null 2>&1 || {
+        warn "nft not found; a host reverse-path filter may drop replies to sing-box's own traffic"
+        return 0
+    }
+    as_root nft delete table inet "$table" 2>/dev/null || true
+    # Only the bits of the fwmark itself are touched in the conntrack mark
+    # (tailscale keeps its own in 0xff0000) and only connections that left
+    # here marked are restored. `established` so that connections opened before
+    # the tunnel came up are picked up as soon as they next send.
+    as_root nft -f - <<EOF || warn "failed to install nft table inet $table; a host reverse-path filter may drop replies to sing-box's own traffic"
+table inet $table {
+    # LOCAL_OUT, right after conntrack has picked the connection up
+    chain save {
+        type filter hook output priority -180; policy accept;
+        meta nfproto ipv4 ct state new,established meta mark $2 ct mark set ct mark | $2
+    }
+    # PREROUTING, right after conntrack and ahead of the filters (mangle -150,
+    # NixOS rpfilter mangle+10): their route lookup must see the restored mark
+    chain restore {
+        type filter hook prerouting priority -180; policy accept;
+        meta nfproto ipv4 ct mark & $2 == $2 meta mark set ct mark & $2
+    }
+}
+EOF
+}
+
+marks_remove() { as_root nft delete table inet "$(mark_table "$1")" 2>/dev/null || true; }
+
+# tunnel_apply <kind> <wait:0|1>
 tunnel_apply() {
-    local kind="$1" wait="$2" carrier_name="$3"
+    local kind="$1" wait="$2"
     local tname
     tname="$(sget template)"
     local tfile
@@ -262,27 +369,26 @@ tunnel_apply() {
             || die "interface $iface does not exist — is $SVC running the active template?"
     fi
 
-    # carrier IP must stay on the main table or its own traffic loops into
-    # the tunnel; domain-server carriers have none — the fwmark escape
-    # covers them.
+    # sing-box's own traffic is deliberately absent from the bypass list: it
+    # escapes on the mark alone — the @900 fwmark rule for what it sends, the
+    # conntrack mark table for what comes back. `bypass` is for SYSTEM traffic
+    # that must stay off the tunnel (the LAN, etc.).
     local -a cidrs=()
-    if [ -n "$carrier_name" ]; then
-        local cip
-        cip="$(carrier_ip "$carrier_name")"
-        if is_ip "$cip"; then
-            cidrs+=("$cip/32")
-        else
-            warn "carrier '$carrier_name' has no IP server; relying on the fwmark escape"
-        fi
-    fi
-    mapfile -t -O "${#cidrs[@]}" cidrs < <(tunnel_bypass "$tfile" "$kind")
+    mapfile -t cidrs < <(tunnel_bypass "$tfile" "$kind")
 
     as_root ip route replace default dev "$iface" table "$table"
     local cidr
     for cidr in "${cidrs[@]}"; do
         as_root ip rule add to "$cidr" lookup main priority 900 2>/dev/null || true
     done
-    as_root ip rule add fwmark "$fwmark" lookup main priority 900 2>/dev/null || true
+    escape_rules add routes
+    if [[ "$fwmark" =~ ^[0-9]+$ ]]; then
+        as_root ip rule add fwmark "$fwmark" lookup main priority 900 2>/dev/null || true
+        marks_install "$kind" "$fwmark"
+    else
+        warn "x-chproxy.$kind.fwmark is not a number ('$fwmark'); the fwmark escape is off"
+    fi
+    escape_rules add marks
     as_root ip rule add lookup "$table" priority 2000 2>/dev/null || true
 
     case "$kind" in
@@ -295,14 +401,14 @@ tunnel_apply() {
     # registered (usually LAN/ISP resolvers), and those destinations sit in
     # bypass → queries would leave in plaintext outside the tunnel. Register
     # tunnel-routed resolvers EXCLUSIVELY (-x) for $iface so the system
-    # resolves only through them (public IPs ride the policy table).
+    # resolves only through them (public IPs ride the policy table). The pin
+    # does not stay put on its own — the daemon's dns_keeper re-asserts it.
     local -a dns_servers=()
     mapfile -t dns_servers < <(tunnel_dns "$tfile" "$kind")
     if [ "${#dns_servers[@]}" -eq 0 ]; then
         warn "x-chproxy.$kind.dns is empty; system DNS may leak"
     elif command -v resolvconf >/dev/null 2>&1; then
-        printf 'nameserver %s\n' "${dns_servers[@]}" | as_root resolvconf -x -a "$iface" \
-            || warn "resolvconf -a $iface failed; DNS may leak"
+        dns_pin "$iface" "${dns_servers[@]}" || warn "resolvconf -a $iface failed; DNS may leak"
     else
         warn "resolvconf not found; DNS may leak"
     fi
@@ -321,7 +427,10 @@ tunnel_teardown() {
         as_root ip rule del to "$cidr" lookup main priority 900 2>/dev/null || true
     done
     as_root ip rule del fwmark "$fwmark" lookup main priority 900 2>/dev/null || true
+    escape_rules del marks
+    escape_rules del routes
     as_root ip rule del lookup "$table" priority 2000 2>/dev/null || true
+    marks_remove "$kind"
 }
 
 # tunnel_teardown_active <kind> — derive the parameters from the CURRENT
@@ -341,15 +450,63 @@ tunnel_teardown_active() {
     fwmark="$(tunnel_meta "$tfile" "$kind" fwmark)"
     iface="$(tunnel_meta "$tfile" "$kind" interface)"
     local -a cidrs=()
-    local cip
-    cip="$(carrier_ip "$(cur_proxy)")"
-    is_ip "$cip" && cidrs+=("$cip/32")
-    mapfile -t -O "${#cidrs[@]}" cidrs < <(tunnel_bypass "$tfile" "$kind")
+    mapfile -t cidrs < <(tunnel_bypass "$tfile" "$kind")
     tunnel_teardown "$kind" "$table" "$fwmark" "$iface" "${cidrs[@]}"
+}
+
+# ── DNS pin ownership (see header) ──────────────────────────────────────────
+dns_pin_active() {  # <dns…> — does /etc/resolv.conf list exactly these nameservers?
+    local -a want=("$@") have=()
+    mapfile -t have < <(sed -n 's/^nameserver[[:space:]]\{1,\}//p' /etc/resolv.conf 2>/dev/null)
+    [ "$(printf '%s\n' "${want[@]}" | sort)" = "$(printf '%s\n' "${have[@]}" | sort)" ]
+}
+
+dns_pin() {  # <iface> <dns…>
+    local iface="$1"
+    shift
+    printf 'nameserver %s\n' "$@" | as_root resolvconf -x -a "$iface"
+}
+
+# dns_keeper — a background subshell for the daemon's lifetime. Re-asserts the
+# pin of every tunnel that state says is on AND that is really routed (its
+# policy rule exists), whenever something else has taken the resolver. State is
+# re-read on every tick, so a tunnel toggled live from the CLI is covered too.
+# The first tick is always the short one: a daemon (re)start with a tunnel on
+# is exactly when the pin needs re-asserting (see header).
+DNS_KEEPER_INTERVAL=2     # while a tunnel is up
+DNS_KEEPER_IDLE=15        # otherwise: just watching for one
+dns_keeper() {
+    command -v resolvconf >/dev/null 2>&1 || return 0
+    local interval="$DNS_KEEPER_INTERVAL" tname tfile kind iface table routed
+    local -a dns=()
+    while sleep "$interval"; do
+        routed=0
+        STATE_JSON="$(state_read)"
+        tname="$(sget template)"
+        tfile="$(template_path "$tname")"
+        for kind in tun wg; do
+            [ "$(sget "$kind")" = true ] || continue
+            if [ -f "$tfile" ] && has_tunnel_section "$tfile" "$kind"; then
+                table="$(tunnel_meta "$tfile" "$kind" table)"
+                if [ -n "$table" ] && ip rule show 2>/dev/null | grep -q " lookup $table\$"; then
+                    routed=1
+                    iface="$(tunnel_meta "$tfile" "$kind" interface)"
+                    dns=()
+                    mapfile -t dns < <(tunnel_dns "$tfile" "$kind")
+                    if [ "${#dns[@]}" -gt 0 ] && ! dns_pin_active "${dns[@]}"; then
+                        dns_pin "$iface" "${dns[@]}" || true
+                    fi
+                fi
+            fi
+        done
+        if [ "$routed" = 1 ]; then interval="$DNS_KEEPER_INTERVAL"; else interval="$DNS_KEEPER_IDLE"; fi
+    done
 }
 
 cleanup() {
     trap - EXIT INT TERM
+    # first: it must not re-assert the DNS pin while the tunnels go down
+    [ -n "$KEEPER_PID" ] && kill "$KEEPER_PID" 2>/dev/null
     if [ "$WG_UP" = 1 ]; then
         tunnel_teardown wg "$WG_TABLE" "$WG_FWMARK" "$WG_IFACE" "${WG_CIDRS[@]}"
     fi
@@ -383,6 +540,11 @@ Templates are /etc/chproxy/<name>.json — complete sing-box configs plus a
 reserved "x-chproxy" {tun, wg} routing section (see the script header).
 The selected carrier from /etc/proxies.json replaces whatever the template
 tags "proxy". `chproxy <name>` is a legacy alias for `chproxy use <name>`.
+
+settings.json may list "escape": {marks, routes} — other VPNs (tailscale) that
+must survive a tunnel: fwmarks kept on the main table, destinations kept in
+their own table. The script header explains tunnels, the fwmark escape (and
+its reply side), escape, and the DNS pin.
 EOF
 }
 
@@ -477,7 +639,7 @@ cmd_tunnel() {  # <kind> <on|off>
 
     if systemctl is-active --quiet "$SVC" 2>/dev/null; then
         if [ "$action" = on ]; then
-            tunnel_apply "$kind" 0 "$(cur_proxy)"
+            tunnel_apply "$kind" 0
             echo "chproxy: $kind on"
         else
             tunnel_teardown_active "$kind"
@@ -535,8 +697,11 @@ cmd_status() {
         else
             echo "  $kind:     iface $iface down (table $table)"
         fi
-        ip rule show 2>/dev/null | grep "lookup $table" | sed 's/^/    rule: /' || true
     done
+    # the whole block a tunnel installs: bypass + escape routes + fwmarks @900,
+    # the catch-all @2000
+    ip rule show 2>/dev/null | grep -E '^(900|2000):' \
+        | sed -E 's/^([0-9]+):[[:space:]]+from all /\1: /; s/^/    rule: /' || true
     systemctl status "$SVC" --no-pager 2>/dev/null | sed -n '1,5p' || true
 }
 
@@ -579,16 +744,17 @@ cmd_daemon() {
 
     local tname
     tname="$(sget template)"
-    local kind p
-    p="$(cur_proxy)"
+    local kind
     for kind in wg tun; do
         [ "$(sget "$kind")" = true ] || continue
         if ! has_tunnel_section "$TFILE" "$kind"; then
             warn "state has $kind=true but template '$tname' lacks x-chproxy.$kind; skipping"
             continue
         fi
-        tunnel_apply "$kind" 1 "$p"
+        tunnel_apply "$kind" 1
     done
+    dns_keeper &
+    KEEPER_PID=$!
     wait "$SB_PID"
 }
 
