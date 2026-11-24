@@ -58,12 +58,28 @@ let
   templateFiles = lib.mapAttrs (
     name: cfg: pkgs.writeText "chproxy-${name}.json" (builtins.toJSON cfg)
   ) secrets.chproxyTemplates;
+
+  # Tailscale must survive a chproxy tunnel (utils/chproxy/chproxy, "other
+  # VPNs" in the header + `escape_rules`): the tunnel's catch-all rule would
+  # otherwise swallow both tailscaled's own traffic and the tailnet, because
+  # tailscale's rules sit at a higher priority number (5210…5270) and so are
+  # never reached. tailscaled marks its own sockets 0x80000 (masked 0xff0000)
+  # and carries that mark across conntrack itself, so one rule in front of the
+  # catch-all keeps its underlay on the main table — and lets its replies past
+  # the firewall's reverse-path filter, which looks them up with the restored
+  # mark. The tailnet (CGNAT range) keeps tailscale's table 52. Nothing else
+  # is handed to tailscale: this host does not use it as an exit node.
+  escape = lib.optionalAttrs config.services.tailscale.enable {
+    marks = [ "0x80000/0xff0000" ];
+    routes = [ { to = "100.64.0.0/10"; table = 52; } ];
+  };
   settingsJson = pkgs.writeText "chproxy-settings.json" (
     builtins.toJSON {
       service = "chproxy";
       singbox_bin = "sing-box";
       proxies_file = "/etc/proxies.json";
       state_file = "/etc/chproxy/state.json";
+      inherit escape;
       defaults = {
         template = "main";
         proxy = secrets.defaultProxy;
@@ -262,7 +278,11 @@ in
         sing-box
         pkgs.jq
         pkgs.iproute2
-        pkgs.openresolv # resolvconf — DNS leak pin while the wg front is up
+        # reply side of the fwmark escape: this unit's reverse-path filter
+        # (`checkReversePath`) drops unmarked replies to sing-box's marked
+        # sockets, so each tunnel carries the mark across conntrack via nft
+        pkgs.nftables
+        pkgs.openresolv # resolvconf — DNS leak pin while a tunnel is up
       ];
       wantedBy = [ "multi-user.target" ];
     };

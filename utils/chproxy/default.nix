@@ -15,6 +15,7 @@
   sing-box,
   jq,
   iproute2,
+  nftables,
   openresolv,
 }:
 writeShellApplication {
@@ -30,6 +31,7 @@ writeShellApplication {
     sing-box
     jq
     iproute2
+    nftables # reply side of the fwmark escape — conntrack-mark table per tunnel
     openresolv # resolvconf — DNS leak pin while a tunnel is up
   ];
   text = builtins.readFile ./chproxy;
