@@ -64,7 +64,8 @@
     # Optionally, you may need to select the appropriate driver version for your specific GPU.
     package = config.boot.kernelPackages.nvidiaPackages.stable;
   };
-  boot.loader.grub.gfxmodeEfi = "1024x768";
+  #boot.loader.grub.gfxmodeEfi = "1024x768";
+  boot.loader.grub.gfxmodeEfi = "auto";
   # Registers the nvidia runtime with the Docker daemon
   hardware.nvidia-container-toolkit.enable = true;
 
