@@ -126,12 +126,12 @@ in
                 # chproxy templates (custom per profile)
                 chproxyTemplates = lib.mkOption {
                   type = lib.types.attrsOf lib.types.attrs;
-                  description = ''This profile's chproxy templates: name → COMPLETE custom sing-box config, rendered 1:1 to /etc/chproxy/<name>.json by system/network.nix (no shared engine — each secrets.*.nix writes its own, so profiles can differ arbitrarily: ports, fronts, inbounds…). Two contract points, everything else is plain sing-box: the reserved top-level "x-chproxy" {tun,wg} routing section (stripped by chproxy before sing-box sees it, drives `chproxy tun/wg on` — see the chproxy script header) and the "proxy"-tagged outbound, the placeholder the selected carrier from /etc/proxies.json replaces. Reserved names: state, settings, chproxy.'';
+                  description = ''This profile's chproxy templates: name → COMPLETE custom sing-box config, rendered 1:1 to /etc/chproxy/<name>.json by the chproxy flake's module (system/network.nix feeds them to services.chproxy.templates; no shared engine — each secrets.*.nix writes its own, so profiles can differ arbitrarily: ports, fronts, inbounds…). Two contract points, everything else is plain sing-box: the reserved top-level "x-chproxy" {tun,wg} routing section (stripped by chproxy before sing-box sees it, drives `chproxy tun/wg on` — see the chproxy script header) and the "proxy"-tagged outbound, the placeholder the selected carrier from /etc/proxies.json replaces. Reserved names: state, settings, chproxy.'';
                 };
 
                 defaultProxy = lib.mkOption {
                   type = lib.types.str;
-                  description = ''Name of the default carrier (a key in the runtime /etc/proxies.json), rendered into /etc/chproxy/settings.json; used when no proxy is selected.'';
+                  description = "Name of the default carrier (a key in the runtime /etc/proxies.json), rendered into /etc/chproxy/settings.json; used when no proxy is selected.";
                   example = "pro";
                 };
 

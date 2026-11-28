@@ -54,6 +54,22 @@
         "type": "github"
       }
     },
+    "chproxy": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "path": "./chproxy",
+        "type": "path"
+      },
+      "original": {
+        "path": "./chproxy",
+        "type": "path"
+      },
+      "parent": []
+    },
     "disko": {
       "inputs": {
         "nixpkgs": [
@@ -351,6 +367,7 @@
     "root": {
       "inputs": {
         "HyprQuickFrame": "HyprQuickFrame",
+        "chproxy": "chproxy",
         "disko": "disko",
         "fenix": "fenix",
         "home-manager": "home-manager",

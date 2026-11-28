@@ -63,6 +63,14 @@ flake.nix                      # Central orchestrator, defines all systems
 │   ├── media.nix             # Media applications
 │   └── Custom shell apps: notitrans-{fa,en,dict}, search-select, ensure-class-hyprland
 │
+├── chproxy/                   # chproxy — its OWN flake (path: input)
+│   ├── flake.nix              # packages.{chproxy,sing-box-extended}, nixosModules.default
+│   ├── chproxy                # The script (plain bash + jq)
+│   ├── package.nix            # writeShellApplication wrapper
+│   ├── sing-box-extended.nix  # nixpkgs sing-box → the shtorm-7 fork
+│   ├── nixos/default.nix      # `services.chproxy` module (unit, /etc/chproxy, CLI on PATH)
+│   └── example/               # Minimal buildable reference config (#example)
+│
 ├── cli/                      # Command-line tools
 │   └── zsh, shells, utilities
 │
@@ -85,6 +93,7 @@ flake.nix                      # Central orchestrator, defines all systems
 The flake passes these to all modules via `specialArgs`:
 - `unstable` - Unstable nixpkgs import with unfree enabled
 - `hardware-configuration` - From `./vars/hardware-configuration.nix`
+- `chproxy` - The `./chproxy` flake (as a `path:` input) — `chproxy.nixosModules.default`, `chproxy.packages`
 
 Secrets are injected via `config.userConfiguration.secrets` (defined in `system/userInfo.nix`).
 
@@ -158,8 +167,12 @@ Hardware config goes in `vars/hardware-configuration.nix`.
   specialisation moves it to `localhost:3080`
 - VPN options: ExpressVPN, OpenVPN, AmneziaVPN (awg), Tor
 - `slipstream` package provides covert DNS channel
-- `chproxy` (plain bash + jq, packaged at `utils/chproxy/` and exposed as the
-  standalone flake package `.#chproxy`) drives sing-box from **templates +
+- `chproxy` (plain bash + jq) is **its own flake in `chproxy/`** — package,
+  `sing-box-extended`, and the NixOS module `services.chproxy`
+  (`nixosModules.default`, imported by `system/network.nix`; unit,
+  `/etc/chproxy`, CLI on PATH, the tailscale `escape`). Consumed here as a
+  `path:` input (edits in `chproxy/` need no re-lock; `nixpkgs` follows ours)
+  and re-exported as `.#chproxy`. It drives sing-box from **templates +
   carriers**: each `/etc/chproxy/<name>.json` is a complete sing-box config
   plus a reserved `x-chproxy` {tun,wg} routing section (stripped before
   sing-box sees it); the selected carrier from `/etc/proxies.json` replaces
@@ -171,15 +184,16 @@ Hardware config goes in `vars/hardware-configuration.nix`.
   (policy routing only — applied live, no restart; mutually exclusive),
   plus `list`, `status`, `daemon`, `compose` (debug dry-run). `chproxy <name>`
   is a legacy alias for `use <name>`.
-- Tunnel mechanics (full story in the header of `utils/chproxy/chproxy`):
+- Tunnel mechanics (full story in the header of `chproxy/chproxy`):
   system traffic → `lookup <table>`; the template's `bypass` ranges AND
   everything sing-box itself opens stay on the main table — the latter purely
   on the fwmark (`x-chproxy.<kind>.fwmark` = `route.default_mark`), wg-quick
   style; no carrier endpoint IP is ever special-cased. The escape is
   two-sided: a per-tunnel nft conntrack-mark table lets the *replies* past the
   firewall's reverse-path filter (`checkReversePath`), without which carrier
-  underlays time out with the tunnel on. `settings.escape` (rendered in
-  `system/network.nix` from `services.tailscale.enable`) keeps tailscaled's own
+  underlays time out with the tunnel on. `settings.escape` (rendered by the
+  module from `services.chproxy.escape`, on by default when
+  `services.tailscale.enable`) keeps tailscaled's own
   traffic on main and the tailnet in its table 52. The DNS pin is re-asserted
   by a keeper in the daemon (openresolv exclusivity is last-writer-wins;
   tailscaled re-registers on link changes).
@@ -189,8 +203,9 @@ Hardware config goes in `vars/hardware-configuration.nix`.
   `/etc/chproxy/<name>.json`, plus `/etc/chproxy/settings.json`; further
   templates can be dropped into `/etc/chproxy` at runtime. Carrier outbounds
   live in the **runtime** `/etc/proxies.json` (edit directly, no rebuild).
-- Rendered in `system/network.nix` — there is no shared template engine; edit a
-  profile's templates in its `vars/secrets.*.nix`
+- `system/network.nix` only feeds them to `services.chproxy`
+  (`templates`, `settings.defaults.proxy`, `ipv4Only`) — there is no shared
+  template engine; edit a profile's templates in its `vars/secrets.*.nix`
 - james's tailscale egress is the `ts-end` template: the sing-box tailscale
   endpoint (embedded tsnet, exit node `desktop-6drpdjj`, state at
   `/var/lib/sing-box/ts`; the auth key is only read if that dir is ever wiped)
@@ -217,7 +232,7 @@ Modular Neovim config in `programming/nixvim/`:
 ## Custom Shell Applications
 
 Many utilities use `writeShellApplication`:
-- `utils/chproxy/default.nix` - The sing-box proxy switcher (`utils/chproxy/chproxy`); CLI + daemon + standalone flake package (`.#chproxy`)
+- `chproxy/package.nix` - The sing-box proxy switcher (`chproxy/chproxy`); CLI + daemon, its own flake (`chproxy/`), re-exported as `.#chproxy`
 - `gui/notitrans-fa.nix` - Translate selected text to Persian
 - `gui/notitrans-en.nix` - Translate selected text to English
 - `gui/notitrans-dict.nix` - Dictionary lookup

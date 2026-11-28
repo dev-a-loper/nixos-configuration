@@ -1,8 +1,8 @@
 {
   config,
-  lib,
   pkgs,
   unstable,
+  chproxy,
   ...
 }:
 let
@@ -12,98 +12,16 @@ let
     text = secrets.awg-config;
     destination = "/awg.conf";
   };
-  sing-box = pkgs.sing-box.overrideAttrs (
-    finalAttrs: prevAttrs: {
-      pname = "sing-box-extended";
-      version = "1.14.3-extended-2.7.3";
-
-      src = pkgs.fetchFromGitHub {
-        owner = "shtorm-7";
-        repo = "sing-box-extended";
-        tag = "v${finalAttrs.version}";
-        hash = "sha256-1xopWHom+RZLhjhScUpA3UFvS4DjJVaXc2zJcTnfcTQ=";
-      };
-
-      vendorHash = "sha256-r51H+rVlK6wR+bdtQSPUNJAOCr1/Oy3wUeYPOyw2bEU=";
-
-      # keep everything nixpkgs builds sing-box with, add the extended gates
-      tags = prevAttrs.tags ++ [
-        "with_masque"
-        "with_mtproxy"
-        "with_trusttunnel"
-        "with_call"
-        "with_sudoku"
-      ];
-
-      meta = prevAttrs.meta // {
-        description = "Universal proxy platform (extended fork)";
-        homepage = "https://github.com/shtorm-7/sing-box-extended";
-        maintainers = [ ];
-      };
-    }
-  );
   slipstream = (pkgs.callPackage ./slipstream.nix { });
   paqet = (pkgs.callPackage ./paqet.nix { });
-  chproxy = pkgs.callPackage ../utils/chproxy { inherit sing-box; };
-
-  # chproxy runtime files (see utils/chproxy/chproxy for the full contract).
-  # The templates are FULLY CUSTOM per profile — plain data authored in the
-  # profile's vars/secrets.<name>.nix as secrets.chproxyTemplates (name →
-  # complete sing-box config + the reserved x-chproxy section) and rendered
-  # here 1:1, untouched. There is deliberately no shared template engine:
-  # profiles differ by editing their own template, not by threading options
-  # through one. Carrier outbounds are NOT here — they live in the runtime
-  # /etc/proxies.json; extra templates can be dropped into /etc/chproxy by
-  # hand (any *.json except state/settings/chproxy).
-  templateFiles = lib.mapAttrs (
-    name: cfg: pkgs.writeText "chproxy-${name}.json" (builtins.toJSON cfg)
-  ) secrets.chproxyTemplates;
-
-  # Tailscale must survive a chproxy tunnel (utils/chproxy/chproxy, "other
-  # VPNs" in the header + `escape_rules`): the tunnel's catch-all rule would
-  # otherwise swallow both tailscaled's own traffic and the tailnet, because
-  # tailscale's rules sit at a higher priority number (5210…5270) and so are
-  # never reached. tailscaled marks its own sockets 0x80000 (masked 0xff0000)
-  # and carries that mark across conntrack itself, so one rule in front of the
-  # catch-all keeps its underlay on the main table — and lets its replies past
-  # the firewall's reverse-path filter, which looks them up with the restored
-  # mark. The tailnet (CGNAT range) keeps tailscale's table 52. Nothing else
-  # is handed to tailscale: this host does not use it as an exit node.
-  escape = lib.optionalAttrs config.services.tailscale.enable {
-    marks = [ "0x80000/0xff0000" ];
-    routes = [ { to = "100.64.0.0/10"; table = 52; } ];
-  };
-  settingsJson = pkgs.writeText "chproxy-settings.json" (
-    builtins.toJSON {
-      service = "chproxy";
-      singbox_bin = "sing-box";
-      proxies_file = "/etc/proxies.json";
-      state_file = "/etc/chproxy/state.json";
-      inherit escape;
-      defaults = {
-        template = "main";
-        proxy = secrets.defaultProxy;
-      };
-    }
-  );
 in
 {
-  imports = [ ];
+  imports = [ chproxy.nixosModules.default ];
   # Soft DNS posture for the boot parent/default profile: NM keeps feeding
   # DHCP/ISP resolvers into resolvconf as usual. The hard no-leak posture
   # (NM dns=none + static 1.1.1.1/1.0.0.1 base) is james-only — see
   # vars/secrets.james.nix.
   networking.nameservers = [ "1.1.1.1" ];
-  # No IPv6 egress, ever: chproxy's tunnels policy-route IPv4 only, so any v6
-  # path would bypass them (IP leak). The ISP is v4-only today — this keeps
-  # it moot even if that ever changes. sysctls are the hard guarantee (all +
-  # default covers future interfaces); enableIPv6=false is the declarative
-  # flag. Tailscale falls back to v4 fine.
-  networking.enableIPv6 = false;
-  boot.kernel.sysctl = {
-    "net.ipv6.conf.all.disable_ipv6" = 1;
-    "net.ipv6.conf.default.disable_ipv6" = 1;
-  };
   networking.networkmanager.enable = true;
   networking.firewall.allowedTCPPorts = [
     3080
@@ -159,17 +77,28 @@ in
   programs.throne.tunMode.setuid = true;
   # programs.throne.package = unstable.throne;
 
-  # chproxy templates + settings (per-profile data, rendered verbatim). State
-  # (/etc/chproxy/state.json) is writable runtime data — never an
-  # environment.etc store symlink. A legacy /etc/current-proxy is migrated by
-  # chproxy itself on first run.
-  environment.etc =
-    (lib.mapAttrs' (
-      name: file: lib.nameValuePair "chproxy/${name}.json" { source = file; }
-    ) templateFiles)
-    // {
-      "chproxy/settings.json".source = settingsJson;
-    };
+  # chproxy — its own flake (./chproxy, a `path:` input: edits there need no
+  # re-lock) carrying the package, sing-box-extended and the services.chproxy
+  # module (unit, /etc/chproxy, CLI on PATH, the tailscale escape — on here
+  # because services.tailscale is).
+  #
+  # The templates are FULLY CUSTOM per profile — plain data authored in the
+  # profile's vars/secrets.<name>.nix as secrets.chproxyTemplates (name →
+  # complete sing-box config + the reserved x-chproxy section) and rendered
+  # by the module 1:1, untouched. There is deliberately no shared template
+  # engine: profiles differ by editing their own template, not by threading
+  # options through one. Carrier outbounds are NOT declared — they live in
+  # the runtime /etc/proxies.json; extra templates can be dropped into
+  # /etc/chproxy by hand (any *.json except state/settings/chproxy).
+  services.chproxy = {
+    enable = true;
+    # No IPv6 egress, ever: chproxy's tunnels policy-route IPv4 only, so any
+    # v6 path would bypass them (IP leak). The ISP is v4-only today — this
+    # keeps it moot even if that ever changes. Tailscale falls back to v4 fine.
+    ipv4Only = true;
+    templates = secrets.chproxyTemplates;
+    settings.defaults.proxy = secrets.defaultProxy;
+  };
 
   environment.systemPackages = [
     slipstream
@@ -180,13 +109,11 @@ in
     pkgs.nmstate
     unstable.xray
     pkgs.v2ray
-    sing-box
     unstable.tun2socks
     unstable.amnezia-vpn
     unstable.amneziawg-go
     unstable.amneziawg-tools
     unstable.tor
-    chproxy
     pkgs.jq
     pkgs.iproute2
     unstable.wireguard-tools
@@ -259,32 +186,6 @@ in
         pkgs.openresolv # For resolvconf
         pkgs.coreutils # For basic commands
       ];
-    };
-    services.chproxy = {
-      enable = true;
-      description = "chproxy — sing-box switcher";
-      after = [ "network.target" ];
-      # environment.etc changes alone don't restart units — the daemon composes
-      # its config at START, so a rebuilt template must bounce the service.
-      restartTriggers = (lib.attrValues templateFiles) ++ [ settingsJson ];
-      serviceConfig = {
-        Restart = "always";
-        # NOTE: the old IPMark=520 was silently ignored by systemd ("Unknown
-        # key"); sing-box's anti-recursion mark comes from the template's
-        # route.default_mark instead (authored in vars/secrets.*.nix).
-        ExecStart = "${chproxy}/bin/chproxy daemon";
-      };
-      path = [
-        sing-box
-        pkgs.jq
-        pkgs.iproute2
-        # reply side of the fwmark escape: this unit's reverse-path filter
-        # (`checkReversePath`) drops unmarked replies to sing-box's marked
-        # sockets, so each tunnel carries the mark across conntrack via nft
-        pkgs.nftables
-        pkgs.openresolv # resolvconf — DNS leak pin while a tunnel is up
-      ];
-      wantedBy = [ "multi-user.target" ];
     };
   };
 }

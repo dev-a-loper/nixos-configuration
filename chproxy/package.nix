@@ -6,10 +6,15 @@
 # argument is callPackage-resolvable, so the package builds standalone:
 #   nix run github:<this-repo>#chproxy
 #
+# `sing-box` defaults to nixpkgs' build. The NixOS module (nixos/default.nix)
+# and this flake's own `chproxy` package pass sing-box-extended
+# (sing-box-extended.nix) instead — the fork the templates are authored
+# against.
+#
 # `sudo` and `systemctl` are deliberately NOT in runtimeInputs: they come from
 # the system PATH (the setuid /run/wrappers/bin/sudo and systemd's systemctl),
 # and adding nixpkgs `sudo` here would shadow the setuid wrapper and break
-# escalation. system/network.nix passes its pinned sing-box via override.
+# escalation.
 {
   writeShellApplication,
   sing-box,

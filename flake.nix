@@ -26,6 +26,14 @@
 
     HyprQuickFrame.url = "github:Ronin-CK/HyprQuickFrame";
     HyprQuickFrame.inputs.nixpkgs.follows = "nixpkgs";
+
+    # chproxy (package + services.chproxy module) — its own flake, living in
+    # this repo. A `path:` input: read straight from the working tree, so
+    # edits there need no re-lock (see chproxy/flake.nix).
+    chproxy = {
+      url = "path:./chproxy";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
   nixConfig = {
     extra-substituters = [
@@ -42,6 +50,7 @@
       self,
       nixpkgs,
       nixvim,
+      chproxy,
       ...
     }@inputs:
     let
@@ -110,11 +119,12 @@
     in
     {
       packages."x86_64-linux".nvim = nvim;
-      # chproxy, standalone-installable (nix run github:<repo>#chproxy) — the
-      # derivation reads only utils/chproxy/, never the gitignored vars/*, so
-      # it evaluates from a clean clone. Keep it that way: anything strict at
-      # the top of outputs that reads vars/ would break this.
-      packages."x86_64-linux".chproxy = inputs.unstable.legacyPackages.${system}.callPackage ./utils/chproxy { };
+      # chproxy, standalone-installable (nix run github:<repo>#chproxy) —
+      # re-exported from the chproxy flake, whose derivation reads only
+      # chproxy/, never the gitignored vars/*, so it evaluates from a clean
+      # clone. Keep it that way: anything strict at the top of outputs that
+      # reads vars/ would break this.
+      packages."x86_64-linux".chproxy = chproxy.packages.${system}.chproxy;
       packages."x86_64-linux".iso = self.nixosConfigurations.iso.config.system.build.isoImage;
       packages."x86_64-linux".usb = self.nixosConfigurations.usb.config.system.build.sdImage;
       nixosConfigurations = builtins.mapAttrs (_: nixpkgs.lib.nixosSystem) {
